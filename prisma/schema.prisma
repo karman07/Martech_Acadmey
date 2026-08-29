@@ -1,0 +1,796 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  student
+  teacher
+  admin
+  sales
+}
+
+enum IdType {
+  passport
+  national_id
+  drivers_license
+  aadhaar
+}
+
+enum KycStatus {
+  pending
+  approved
+  rejected
+  info_requested
+}
+
+enum ContentStatus {
+  draft
+  pending_review
+  published
+  rejected
+}
+
+enum MediaType {
+  video
+  document
+  image
+  audio
+}
+
+enum MediaSourceType {
+  upload
+  url
+}
+
+enum LessonType {
+  video
+  document
+  link
+  quiz
+}
+
+enum LibraryEbookFileType {
+  pdf
+  docx
+}
+
+enum PurchaseType {
+  course
+  ebook
+  bootcamp
+  bundle
+}
+
+enum PurchaseStatus {
+  created
+  paid
+  failed
+}
+
+enum PayoutStatus {
+  pending
+  processing
+  paid
+}
+
+enum EnquiryStatus {
+  open
+  done
+}
+
+model User {
+  uid             String   @id
+  email           String?
+  name            String
+  role            Role
+  avatarPath      String?
+  phone           String?
+  phoneVerified   Boolean  @default(false)
+  state           String?
+  city            String?
+  interest        String?
+  expertise       String?
+  experience      String?
+  portfolio       String?
+  bio             String?
+  profileTemplate String   @default("classic")
+  profileAccent   String   @default("blue")
+  cardStyle       String?
+  profileBgLight  String?
+  profileBgDark   String?
+  /** Sales reps only — the commission percentage admin currently has them set at. Past sales keep the rate that was in effect at the time (see Purchase.commissionPercent). */
+  commissionPercent Decimal? @db.Decimal(5, 2)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  kyc Kyc?
+
+  mediaAssets             MediaAsset[]
+  assignments             Assignment[]
+  activities              Activity[]
+  quizzes                 Quiz[]
+  libraryEbooks           LibraryEbook[]
+  liveClasses             LiveClass[]
+  courses                 Course[]
+  ebooks                  Ebook[]
+  bootcamps               Bootcamp[]
+  bundles                 Bundle[]
+  purchases               Purchase[]             @relation("PurchaseBuyer")
+  salesPurchases          Purchase[]              @relation("PurchaseSalesRep")
+  enrollments             Enrollment[]
+  reviews                 Review[]
+  ebookPurchases          EbookPurchase[]
+  bootcampApplications    BootcampApplication[]
+  bundlePurchases         BundlePurchase[]
+  payouts                 Payout[]
+  enquiries               Enquiry[]
+  salesPayouts            SalesPayout[]
+  teacherPosts            TeacherPost[]
+  teacherCommentsReceived TeacherComment[]      @relation("TeacherCommentsReceived")
+  teacherCommentsAuthored TeacherComment[]      @relation("TeacherCommentsAuthored")
+  teacherFacts            TeacherFact[]
+  teacherBannerImages     TeacherBannerImage[]
+  teacherMessages         TeacherMessage[]
+  teacherBlogPosts        TeacherBlogPost[]
+  teacherPages            TeacherPage[]
+
+  @@map("users")
+}
+
+model Kyc {
+  id              String    @id @default(uuid())
+  userUid         String    @unique
+  user            User      @relation(fields: [userUid], references: [uid], onDelete: Cascade)
+  idType          IdType
+  idNumber        String
+  frontPath       String
+  backPath        String
+  selfiePath      String
+  status          KycStatus @default(pending)
+  rejectionReason String?
+  infoRequestNote String?
+  submittedAt     DateTime  @default(now())
+
+  @@map("kyc_submissions")
+}
+
+model Category {
+  slug        String   @id
+  name        String
+  description String
+  courses     Course[]
+
+  @@map("categories")
+}
+
+model MediaAsset {
+  id          String          @id @default(uuid())
+  teacherUid  String
+  teacher     User            @relation(fields: [teacherUid], references: [uid], onDelete: Cascade)
+  name        String
+  description String?
+  tags        String[]        @default([])
+  type        MediaType
+  sourceType  MediaSourceType @default(upload)
+  mimeType    String?
+  sizeBytes   Int?
+  durationSec Int?
+  storagePath String?
+  url         String?
+  createdAt   DateTime        @default(now())
+
+  lessons CourseLesson[]
+
+  @@map("media_assets")
+}
+
+model Course {
+  id               String        @id @default(uuid())
+  slug             String        @unique
+  teacherUid       String
+  teacher          User          @relation(fields: [teacherUid], references: [uid], onDelete: Cascade)
+  title            String
+  summary          String
+  description      String
+  descriptionWidth String?
+  previewVideoUrl  String?
+  categorySlug     String
+  category         Category      @relation(fields: [categorySlug], references: [slug])
+  level            String
+  price            Decimal       @db.Decimal(10, 2)
+  discountPercent  Int           @default(0)
+  marginPercent    Int           @default(0)
+  status           ContentStatus @default(draft)
+  rejectionReason  String?
+  coverFrom        String
+  coverTo          String
+  coverImagePath   String?
+  courseTemplate   String        @default("classic")
+  courseAccent     String        @default("blue")
+  views            Int           @default(0)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  modules           CourseModule[]
+  assignmentLinks   CourseAssignment[]
+  activityLinks     CourseActivity[]
+  quizLinks         CourseQuiz[]
+  libraryEbookLinks CourseLibraryEbook[]
+  liveClassLinks    CourseLiveClass[]
+  enrollments       Enrollment[]
+  reviews           Review[]
+  bundleLinks       BundleCourse[]
+  bootcampLinks     BootcampCourse[]
+
+  @@map("courses")
+}
+
+model CourseModule {
+  id       String @id @default(uuid())
+  courseId String
+  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title    String
+  order    Int
+
+  lessons CourseLesson[]
+
+  @@map("course_modules")
+}
+
+model CourseLesson {
+  id          String       @id @default(uuid())
+  moduleId    String
+  module      CourseModule @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  title       String
+  type        LessonType
+  durationMin Int?
+  url         String?
+  mediaId     String?
+  media       MediaAsset?  @relation(fields: [mediaId], references: [id], onDelete: SetNull)
+  quizId      String?
+  quiz        Quiz?        @relation(fields: [quizId], references: [id], onDelete: SetNull)
+  order       Int
+
+  progress LessonProgress[]
+
+  @@map("course_lessons")
+}
+
+/**
+ * A teacher's shared assignment library — one assignment can be attached to many courses via CourseAssignment.
+ */
+model Assignment {
+  id          String   @id @default(uuid())
+  teacherUid  String
+  teacher     User     @relation(fields: [teacherUid], references: [uid], onDelete: Cascade)
+  title       String
+  description String
+  tags        String[] @default([])
+  dueInDays   Int
+  createdAt   DateTime @default(now())
+
+  courses CourseAssignment[]
+
+  @@map("assignments")
+}
+
+model CourseAssignment {
+  id           String     @id @default(uuid())
+  courseId     String
+  course       Course     @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  assignmentId String
+  assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, assignmentId])
+  @@map("course_assignments")
+}
+
+/**
+ * A teacher's shared activity library — one activity can be attached to many courses via CourseActivity.
+ */
+model Activity {
+  id          String   @id @default(uuid())
+  teacherUid  String
+  teacher     User     @relation(fields: [teacherUid], references: [uid], onDelete: Cascade)
+  title       String
+  description String
+  tags        String[] @default([])
+  createdAt   DateTime @default(now())
+
+  courses CourseActivity[]
+
+  @@map("activities")
+}
+
+model CourseActivity {
+  id         String   @id @default(uuid())
+  courseId   String
+  course     Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  activityId String
+  activity   Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, activityId])
+  @@map("course_activities")
+}
+
+/**
+ * A teacher's shared quiz library — one quiz can be attached to many courses via CourseQuiz.
+ */
+model Quiz {
+  id          String   @id @default(uuid())
+  teacherUid  String
+  teacher     User     @relation(fields: [teacherUid], references: [uid], onDelete: Cascade)
+  title       String
+  description String
+  tags        String[] @default([])
+  createdAt   DateTime @default(now())
+
+  questions QuizQuestion[]
+  courses   CourseQuiz[]
+  lessons   CourseLesson[]
+
+  @@map("quizzes")
+}
+
+model QuizQuestion {
+  id                 String   @id @default(uuid())
+  quizId             String
+  quiz               Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  prompt             String
+  options            String[]
+  correctOptionIndex Int
+  order              Int
+
+  @@map("quiz_questions")
+}
+
+model CourseQuiz {
+  id       String @id @default(uuid())
+  courseId String
+  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  quizId   String
+  quiz     Quiz   @relation(fields: [quizId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, quizId])
+  @@map("course_quizzes")
+}
+
+/**
+ * A teacher's shared PDF/DOCX library — one file can be attached to many courses via CourseLibraryEbook, and is rendered client-side as a page-turning book.
+ */
+model LibraryEbook {
+  id               String               @id @default(uuid())
+  teacherUid       String
+  teacher          User                 @relation(fields: [teacherUid], references: [uid], onDelete: Cascade)
+  title            String
+  description      String?
+  tags             String[]             @default([])
+  fileType         LibraryEbookFileType
+  originalFilename String
+  mimeType         String
+  storagePath      String
+  sizeBytes        Int
+  pageCount        Int?
+  createdAt        DateTime             @default(now())
+
+  courses CourseLibraryEbook[]
+  ebooks  Ebook[]
+
+  @@map("library_ebooks")
+}
+
+model CourseLibraryEbook {
+  id             String       @id @default(uuid())
+  courseId       String
+  course         Course       @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  libraryEbookId String
+  libraryEbook   LibraryEbook @relation(fields: [libraryEbookId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, libraryEbookId])
+  @@map("course_library_ebooks")
+}
+
+/**
+ * A teacher's shared live-class library — one scheduled session can be attached to many courses via CourseLiveClass.
+ */
+model LiveClass {
+  id          String   @id @default(uuid())
+  teacherUid  String
+  teacher     User     @relation(fields: [teacherUid], references: [uid], onDelete: Cascade)
+  title       String
+  description String?
+  tags        String[] @default([])
+  dateISO     DateTime
+  url         String
+  createdAt   DateTime @default(now())
+
+  courses CourseLiveClass[]
+
+  @@map("live_classes")
+}
+
+model CourseLiveClass {
+  id          String    @id @default(uuid())
+  courseId    String
+  course      Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  liveClassId String
+  liveClass   LiveClass @relation(fields: [liveClassId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, liveClassId])
+  @@map("course_live_classes")
+}
+
+model Ebook {
+  id              String        @id @default(uuid())
+  slug            String        @unique
+  teacherUid      String
+  teacher         User          @relation(fields: [teacherUid], references: [uid], onDelete: Cascade)
+  title           String
+  description     String
+  format          String
+  price           Decimal       @db.Decimal(10, 2)
+  discountPercent Int           @default(0)
+  marginPercent   Int           @default(0)
+  status          ContentStatus @default(draft)
+  rejectionReason String?
+  coverFrom       String
+  coverTo         String
+  coverImagePath  String?
+  pages           Int
+  libraryEbookId  String?
+  libraryEbook    LibraryEbook? @relation(fields: [libraryEbookId], references: [id], onDelete: SetNull)
+  views           Int           @default(0)
+  createdAt       DateTime      @default(now())
+
+  purchases EbookPurchase[]
+
+  @@map("ebooks")
+}
+
+model Bootcamp {
+  id                  String        @id @default(uuid())
+  slug                String        @unique
+  teacherUid          String
+  teacher             User          @relation(fields: [teacherUid], references: [uid], onDelete: Cascade)
+  title               String
+  tagline             String
+  description         String
+  format              String
+  price               Decimal       @db.Decimal(10, 2)
+  discountPercent     Int           @default(0)
+  marginPercent       Int           @default(0)
+  status              ContentStatus @default(draft)
+  rejectionReason     String?
+  coverFrom           String
+  coverTo             String
+  coverImagePath      String?
+  durationWeeks       Int
+  cohortSize          Int
+  seatsRemaining      Int
+  nextCohortDate      DateTime
+  applicationDeadline DateTime
+  views               Int           @default(0)
+  createdAt           DateTime      @default(now())
+
+  applications BootcampApplication[]
+  courses      BootcampCourse[]
+
+  @@map("bootcamps")
+}
+
+model BootcampCourse {
+  id         String   @id @default(uuid())
+  bootcampId String
+  bootcamp   Bootcamp @relation(fields: [bootcampId], references: [id], onDelete: Cascade)
+  courseId   String
+  course     Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([bootcampId, courseId])
+  @@map("bootcamp_courses")
+}
+
+model Bundle {
+  id              String        @id @default(uuid())
+  slug            String        @unique
+  teacherUid      String
+  teacher         User          @relation(fields: [teacherUid], references: [uid], onDelete: Cascade)
+  title           String
+  description     String
+  price           Decimal       @db.Decimal(10, 2)
+  discountPercent Int           @default(0)
+  marginPercent   Int           @default(0)
+  status          ContentStatus @default(draft)
+  rejectionReason String?
+  coverFrom       String
+  coverTo         String
+  coverImagePath  String?
+  views           Int           @default(0)
+  createdAt       DateTime      @default(now())
+
+  courses   BundleCourse[]
+  purchases BundlePurchase[]
+
+  @@map("bundles")
+}
+
+model BundleCourse {
+  bundleId String
+  bundle   Bundle @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+  courseId String
+  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@id([bundleId, courseId])
+  @@map("bundle_courses")
+}
+
+model Purchase {
+  id                String         @id @default(uuid())
+  userUid           String
+  user              User           @relation("PurchaseBuyer", fields: [userUid], references: [uid], onDelete: Cascade)
+  type              PurchaseType
+  refId             String
+  amount            Decimal        @db.Decimal(10, 2)
+  status            PurchaseStatus @default(created)
+  razorpayOrderId   String?        @unique
+  razorpayPaymentId String?
+  /** Set when a sales rep created this purchase on the buyer's behalf (vs. the buyer's own self-serve checkout). */
+  salesRepUid       String?
+  salesRep          User?          @relation("PurchaseSalesRep", fields: [salesRepUid], references: [uid], onDelete: SetNull)
+  /** The rep's commission rate at the moment of sale, snapshotted so later rate changes never rewrite history. */
+  commissionPercent Decimal?       @db.Decimal(5, 2)
+  /** amount * commissionPercent / 100 — computed once the purchase is confirmed paid. Null until then, and always null for non-sales purchases. */
+  commissionAmount  Decimal?       @db.Decimal(10, 2)
+  createdAt         DateTime       @default(now())
+
+  @@map("purchases")
+}
+
+/**
+ * A prospect a sales rep has personally logged — before any platform account
+ * necessarily exists for them. Admin reviews these across every rep and
+ * marks each resolved once it's converted, declined, or otherwise closed.
+ */
+model Enquiry {
+  id          String        @id @default(uuid())
+  salesRepUid String
+  salesRep    User          @relation(fields: [salesRepUid], references: [uid], onDelete: Cascade)
+  name        String
+  phone       String
+  email       String?
+  interest    String?
+  notes       String?
+  status      EnquiryStatus @default(open)
+  createdAt   DateTime      @default(now())
+  doneAt      DateTime?
+
+  @@map("enquiries")
+}
+
+/** Admin's record of an actual commission payment made to a sales rep — mirrors Payout (teacher payouts) but for the sales team. */
+model SalesPayout {
+  id          String       @id @default(uuid())
+  salesRepUid String
+  salesRep    User         @relation(fields: [salesRepUid], references: [uid], onDelete: Cascade)
+  periodLabel String
+  amount      Decimal      @db.Decimal(10, 2)
+  status      PayoutStatus @default(pending)
+  method      String
+  dateISO     DateTime
+  createdAt   DateTime     @default(now())
+
+  @@map("sales_payouts")
+}
+
+model Enrollment {
+  id         String   @id @default(uuid())
+  userUid    String
+  user       User     @relation(fields: [userUid], references: [uid], onDelete: Cascade)
+  courseId   String
+  course     Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  purchaseId String?
+  enrolledAt DateTime @default(now())
+
+  progress LessonProgress[]
+
+  @@unique([userUid, courseId])
+  @@map("enrollments")
+}
+
+model LessonProgress {
+  id           String       @id @default(uuid())
+  enrollmentId String
+  enrollment   Enrollment   @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  lessonId     String
+  lesson       CourseLesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  completedAt  DateTime     @default(now())
+
+  @@unique([enrollmentId, lessonId])
+  @@map("lesson_progress")
+}
+
+model Review {
+  id        String   @id @default(uuid())
+  userUid   String
+  user      User     @relation(fields: [userUid], references: [uid], onDelete: Cascade)
+  courseId  String
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  rating    Int
+  comment   String?
+  createdAt DateTime @default(now())
+
+  @@unique([userUid, courseId])
+  @@map("reviews")
+}
+
+model EbookPurchase {
+  id          String   @id @default(uuid())
+  userUid     String
+  user        User     @relation(fields: [userUid], references: [uid], onDelete: Cascade)
+  ebookId     String
+  ebook       Ebook    @relation(fields: [ebookId], references: [id], onDelete: Cascade)
+  purchaseId  String?
+  purchasedAt DateTime @default(now())
+
+  @@unique([userUid, ebookId])
+  @@map("ebook_purchases")
+}
+
+model BootcampApplication {
+  id         String   @id @default(uuid())
+  userUid    String
+  user       User     @relation(fields: [userUid], references: [uid], onDelete: Cascade)
+  bootcampId String
+  bootcamp   Bootcamp @relation(fields: [bootcampId], references: [id], onDelete: Cascade)
+  purchaseId String?
+  appliedAt  DateTime @default(now())
+
+  @@unique([userUid, bootcampId])
+  @@map("bootcamp_applications")
+}
+
+model BundlePurchase {
+  id          String   @id @default(uuid())
+  userUid     String
+  user        User     @relation(fields: [userUid], references: [uid], onDelete: Cascade)
+  bundleId    String
+  bundle      Bundle   @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+  purchaseId  String?
+  purchasedAt DateTime @default(now())
+
+  @@unique([userUid, bundleId])
+  @@map("bundle_purchases")
+}
+
+model Payout {
+  id          String       @id @default(uuid())
+  teacherUid  String
+  teacher     User         @relation(fields: [teacherUid], references: [uid], onDelete: Cascade)
+  periodLabel String
+  amount      Decimal      @db.Decimal(10, 2)
+  status      PayoutStatus @default(pending)
+  method      String
+  dateISO     DateTime
+  createdAt   DateTime     @default(now())
+
+  @@map("payouts")
+}
+
+/**
+ * A short update a teacher posts to their public profile — not tied to any one course.
+ */
+model TeacherPost {
+  id         String   @id @default(uuid())
+  teacherUid String
+  teacher    User     @relation(fields: [teacherUid], references: [uid], onDelete: Cascade)
+  body       String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("teacher_posts")
+}
+
+/**
+ * A comment a student leaves on a teacher's public profile — gated on having bought/enrolled in something of theirs.
+ */
+model TeacherComment {
+  id         String   @id @default(uuid())
+  teacherUid String
+  teacher    User     @relation("TeacherCommentsReceived", fields: [teacherUid], references: [uid], onDelete: Cascade)
+  authorUid  String
+  author     User     @relation("TeacherCommentsAuthored", fields: [authorUid], references: [uid], onDelete: Cascade)
+  body       String
+  createdAt  DateTime @default(now())
+
+  @@map("teacher_comments")
+}
+
+/**
+ * A short highlight fact ("Years teaching: 8") a teacher shows on their public profile.
+ */
+model TeacherFact {
+  id         String   @id @default(uuid())
+  teacherUid String
+  teacher    User     @relation(fields: [teacherUid], references: [uid], onDelete: Cascade)
+  label      String
+  value      String
+  order      Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  @@map("teacher_facts")
+}
+
+/**
+ * One slide in a teacher's public-profile hero carousel — either an uploaded image
+ * (`imagePath` set), an uploaded video file (`videoPath` set), or a linked video
+ * (`videoUrl` set), never more than one of the three.
+ */
+model TeacherBannerImage {
+  id         String   @id @default(uuid())
+  teacherUid String
+  teacher    User     @relation(fields: [teacherUid], references: [uid], onDelete: Cascade)
+  imagePath  String?
+  videoPath  String?
+  videoUrl   String?
+  order      Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  @@map("teacher_banner_images")
+}
+
+/**
+ * A message a visitor sends a teacher through their public profile's contact form.
+ */
+model TeacherMessage {
+  id          String   @id @default(uuid())
+  teacherUid  String
+  teacher     User     @relation(fields: [teacherUid], references: [uid], onDelete: Cascade)
+  senderName  String
+  senderEmail String
+  body        String
+  isRead      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@map("teacher_messages")
+}
+
+model TeacherBlogPost {
+  id             String   @id @default(uuid())
+  teacherUid     String
+  teacher        User     @relation(fields: [teacherUid], references: [uid], onDelete: Cascade)
+  title          String
+  slug           String
+  excerpt        String
+  body           String
+  coverImagePath String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([teacherUid, slug])
+  @@map("teacher_blog_posts")
+}
+
+/**
+ * A teacher-authored custom page on their instructor microsite (e.g. a
+ * dedicated "About" page beyond the built-in About section). Shown as an
+ * extra nav link (or grouped into a dropdown when there are several).
+ */
+model TeacherPage {
+  id         String   @id @default(uuid())
+  teacherUid String
+  teacher    User     @relation(fields: [teacherUid], references: [uid], onDelete: Cascade)
+  title      String
+  slug       String
+  navLabel   String?
+  body       String
+  order      Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([teacherUid, slug])
+  @@map("teacher_pages")
+}
