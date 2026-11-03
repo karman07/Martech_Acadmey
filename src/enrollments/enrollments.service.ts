@@ -7,10 +7,14 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { computeListPrice, discounted } from '../common/pricing.util';
+import { CourseNotificationsService } from '../mail/course-notifications.service';
 
 @Injectable()
 export class EnrollmentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly courseNotifications: CourseNotificationsService,
+  ) {}
 
   /** Free-course enrollment only — paid courses must go through /payments. */
   async enrollFree(userUid: string, courseId: string) {
@@ -29,14 +33,16 @@ export class EnrollmentsService {
       );
     }
 
+    let enrollment;
     try {
-      const enrollment = await this.prisma.enrollment.create({
+      enrollment = await this.prisma.enrollment.create({
         data: { userUid, courseId },
       });
-      return enrollment;
     } catch {
       throw new ConflictException('Already enrolled');
     }
+    await this.courseNotifications.notifyEnrollment(courseId, userUid);
+    return enrollment;
   }
 
   async findMine(userUid: string) {
@@ -99,12 +105,7 @@ export class EnrollmentsService {
     courseId: string,
     lessonId: string,
   ) {
-    const enrollment = await this.prisma.enrollment.findUnique({
-      where: { userUid_courseId: { userUid, courseId } },
-    });
-    if (!enrollment) {
-      throw new ForbiddenException('Not enrolled in this course');
-    }
+    const enrollment = await this.requireEnrollment(userUid, courseId);
 
     const lesson = await this.prisma.courseLesson.findUnique({
       where: { id: lessonId },
@@ -129,5 +130,126 @@ export class EnrollmentsService {
       data: { enrollmentId: enrollment.id, lessonId },
     });
     return { completed: true };
+  }
+
+  async getLessonQuiz(userUid: string, courseId: string, lessonId: string) {
+    const enrollment = await this.requireEnrollment(userUid, courseId);
+    const lesson = await this.findQuizLesson(courseId, lessonId);
+
+    const attempt = await this.prisma.quizAttempt.findUnique({
+      where: {
+        enrollmentId_lessonId: { enrollmentId: enrollment.id, lessonId },
+      },
+    });
+
+    return {
+      quizId: lesson.quiz!.id,
+      title: lesson.quiz!.title,
+      description: lesson.quiz!.description,
+      questions: lesson.quiz!.questions.map((q) => ({
+        id: q.id,
+        prompt: q.prompt,
+        options: q.options,
+      })),
+      attempt: attempt
+        ? this.scoreAttempt(lesson.quiz!.questions, attempt.answers, attempt)
+        : null,
+    };
+  }
+
+  async submitLessonQuiz(
+    userUid: string,
+    courseId: string,
+    lessonId: string,
+    answers: number[],
+  ) {
+    const enrollment = await this.requireEnrollment(userUid, courseId);
+    const lesson = await this.findQuizLesson(courseId, lessonId);
+    const questions = lesson.quiz!.questions;
+
+    if (answers.length !== questions.length) {
+      throw new BadRequestException(
+        'Answer count does not match the number of questions',
+      );
+    }
+
+    const score = questions.reduce(
+      (sum, q, i) => sum + (answers[i] === q.correctOptionIndex ? 1 : 0),
+      0,
+    );
+
+    const attempt = await this.prisma.quizAttempt.upsert({
+      where: {
+        enrollmentId_lessonId: { enrollmentId: enrollment.id, lessonId },
+      },
+      create: {
+        enrollmentId: enrollment.id,
+        lessonId,
+        quizId: lesson.quiz!.id,
+        answers,
+        score,
+        totalQuestions: questions.length,
+      },
+      update: {
+        answers,
+        score,
+        totalQuestions: questions.length,
+        submittedAt: new Date(),
+      },
+    });
+
+    await this.prisma.lessonProgress.upsert({
+      where: {
+        enrollmentId_lessonId: { enrollmentId: enrollment.id, lessonId },
+      },
+      create: { enrollmentId: enrollment.id, lessonId },
+      update: {},
+    });
+
+    return this.scoreAttempt(questions, answers, attempt);
+  }
+
+  private async requireEnrollment(userUid: string, courseId: string) {
+    const enrollment = await this.prisma.enrollment.findUnique({
+      where: { userUid_courseId: { userUid, courseId } },
+    });
+    if (!enrollment) {
+      throw new ForbiddenException('Not enrolled in this course');
+    }
+    return enrollment;
+  }
+
+  private async findQuizLesson(courseId: string, lessonId: string) {
+    const lesson = await this.prisma.courseLesson.findUnique({
+      where: { id: lessonId },
+      include: {
+        module: true,
+        quiz: { include: { questions: { orderBy: { order: 'asc' } } } },
+      },
+    });
+    if (!lesson || lesson.module.courseId !== courseId) {
+      throw new NotFoundException('Lesson not found');
+    }
+    if (lesson.type !== 'quiz' || !lesson.quiz) {
+      throw new NotFoundException('This lesson has no quiz');
+    }
+    return lesson;
+  }
+
+  private scoreAttempt(
+    questions: { correctOptionIndex: number }[],
+    answers: number[],
+    attempt: { score: number; totalQuestions: number; submittedAt: Date },
+  ) {
+    return {
+      score: attempt.score,
+      totalQuestions: attempt.totalQuestions,
+      submittedAt: attempt.submittedAt,
+      results: questions.map((q, i) => ({
+        selectedOptionIndex: answers[i],
+        correctOptionIndex: q.correctOptionIndex,
+        isCorrect: answers[i] === q.correctOptionIndex,
+      })),
+    };
   }
 }

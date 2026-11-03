@@ -69,6 +69,13 @@ export class CoursesController {
     return this.coursesService.findOneForAdmin(id);
   }
 
+  @Post('admin/courses/:id/unpublish')
+  @UseGuards(FirebaseAuthGuard, RolesGuard)
+  @Roles('admin')
+  unpublishByAdmin(@Param('id') id: string) {
+    return this.coursesService.unpublishByAdmin(id);
+  }
+
   @Get('instructors/:uid')
   findInstructor(@Param('uid') uid: string) {
     return this.coursesService.findInstructorByUid(uid);
@@ -130,6 +137,13 @@ export class CoursesController {
   @Roles('teacher')
   submit(@CurrentProfile() profile: User, @Param('id') id: string) {
     return this.coursesService.submit(profile.uid, id);
+  }
+
+  @Post('teacher/courses/:id/unpublish')
+  @UseGuards(FirebaseAuthGuard, RolesGuard)
+  @Roles('teacher')
+  unpublish(@CurrentProfile() profile: User, @Param('id') id: string) {
+    return this.coursesService.unpublish(profile.uid, id);
   }
 
   @Post('teacher/courses/:id/cover')

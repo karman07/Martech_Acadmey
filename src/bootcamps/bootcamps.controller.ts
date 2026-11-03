@@ -15,6 +15,8 @@ import { FirebaseAuthGuard } from '../auth/firebase-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { CurrentProfile } from '../auth/current-profile.decorator';
+import { CurrentUser } from '../auth/current-user.decorator';
+import type { DecodedIdToken } from 'firebase-admin/auth';
 import type { User } from '@prisma/client';
 import { BootcampsService } from './bootcamps.service';
 import { CreateBootcampDto } from './dto/create-bootcamp.dto';
@@ -30,6 +32,12 @@ export class BootcampsController {
   @Get('bootcamps')
   findPublished(@Query('instructor') teacherUid?: string) {
     return this.bootcampsService.findPublished(teacherUid);
+  }
+
+  @Get('bootcamps/mine')
+  @UseGuards(FirebaseAuthGuard)
+  findMine(@CurrentUser() user: DecodedIdToken) {
+    return this.bootcampsService.findMine(user.uid);
   }
 
   @Get('bootcamps/:slug')

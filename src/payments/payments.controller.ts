@@ -47,10 +47,10 @@ export class PaymentsController {
     @Headers('x-razorpay-signature') signature: string,
   ) {
     const rawBody = req.body as Buffer;
-    if (
-      !Buffer.isBuffer(rawBody) ||
-      !this.razorpay.verifyWebhookSignature(rawBody, signature)
-    ) {
+    const signatureValid =
+      Buffer.isBuffer(rawBody) &&
+      (await this.razorpay.verifyWebhookSignature(rawBody, signature));
+    if (!signatureValid) {
       throw new BadRequestException('Invalid webhook signature');
     }
 

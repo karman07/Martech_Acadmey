@@ -14,7 +14,12 @@ import { UpdateBootcampDto } from './dto/update-bootcamp.dto';
 
 const FULL_INCLUDE = {
   teacher: true,
+  category: true,
   courses: { select: { courseId: true } },
+  liveClasses: {
+    include: { liveClass: true },
+    orderBy: { liveClass: { dateISO: 'asc' as const } },
+  },
   _count: { select: { applications: true } },
 };
 
@@ -35,11 +40,18 @@ export class BootcampsService {
       id: bootcamp.id,
       slug: bootcamp.slug,
       teacherUid: bootcamp.teacherUid,
-      instructor: { uid: bootcamp.teacher.uid, name: bootcamp.teacher.name },
+      instructor: {
+        uid: bootcamp.teacher.uid,
+        name: bootcamp.teacher.name,
+        title: bootcamp.teacher.expertise ?? null,
+        bio: bootcamp.teacher.bio ?? null,
+        avatarPath: bootcamp.teacher.avatarPath ?? null,
+      },
       title: bootcamp.title,
       tagline: bootcamp.tagline,
       description: bootcamp.description,
       format: bootcamp.format,
+      location: bootcamp.location,
       price: bootcamp.price.toNumber(),
       discountPercent: bootcamp.discountPercent,
       marginPercent: bootcamp.marginPercent,
@@ -50,6 +62,15 @@ export class BootcampsService {
       coverTheme: { from: bootcamp.coverFrom, to: bootcamp.coverTo },
       coverImagePath: bootcamp.coverImagePath,
       courseIds: bootcamp.courses.map((c) => c.courseId),
+      // Public-safe summary — no join/recording links here. findMine() (enrolled students
+      // only) overrides this with the full details after calling map().
+      liveClasses: bootcamp.liveClasses.map((link) => ({
+        id: link.liveClass.id,
+        title: link.liveClass.title,
+        dateISO: link.liveClass.dateISO,
+        durationMinutes: link.liveClass.durationMinutes,
+        status: link.liveClass.status,
+      })),
       durationWeeks: bootcamp.durationWeeks,
       cohortSize: bootcamp.cohortSize,
       seatsRemaining: bootcamp.seatsRemaining,
@@ -58,6 +79,16 @@ export class BootcampsService {
       views: bootcamp.views,
       applications: bootcamp._count.applications,
       createdAt: bootcamp.createdAt,
+      categorySlug: bootcamp.categorySlug,
+      categoryName: bootcamp.category?.name ?? null,
+      level: bootcamp.level,
+      hoursPerWeek: bootcamp.hoursPerWeek,
+      rating: bootcamp.rating,
+      studentsGraduated: bootcamp.studentsGraduated,
+      outcomes: bootcamp.outcomes,
+      modules: bootcamp.modules,
+      admissionRequirements: bootcamp.admissionRequirements,
+      careerSupport: bootcamp.careerSupport,
     };
   }
 
@@ -83,6 +114,7 @@ export class BootcampsService {
         tagline: dto.tagline,
         description: dto.description,
         format: dto.format,
+        location: dto.location,
         price: dto.price,
         discountPercent: dto.discountPercent ?? 0,
         durationWeeks: dto.durationWeeks,
@@ -92,6 +124,13 @@ export class BootcampsService {
         applicationDeadline: new Date(dto.applicationDeadline),
         coverFrom: dto.coverFrom,
         coverTo: dto.coverTo,
+        categorySlug: dto.categorySlug,
+        level: dto.level,
+        hoursPerWeek: dto.hoursPerWeek ?? 0,
+        outcomes: dto.outcomes ?? [],
+        modules: dto.modules ?? [],
+        admissionRequirements: dto.admissionRequirements ?? [],
+        careerSupport: dto.careerSupport ?? [],
       },
       include: FULL_INCLUDE,
     });
@@ -239,15 +278,72 @@ export class BootcampsService {
     return this.map({ ...bootcamp, views: bootcamp.views + 1 });
   }
 
+  /** Enrolled-student view — unlike the base map()'s public-safe live-class summary, this
+   * includes the join link and recording, since only students who've paid to apply see this. */
+  async findMine(userUid: string) {
+    const applications = await this.prisma.bootcampApplication.findMany({
+      where: { userUid },
+      include: { bootcamp: { include: FULL_INCLUDE } },
+      orderBy: { appliedAt: 'desc' },
+    });
+    return applications.map((a) => ({
+      ...this.map(a.bootcamp),
+      liveClasses: a.bootcamp.liveClasses.map((link) => ({
+        id: link.liveClass.id,
+        title: link.liveClass.title,
+        description: link.liveClass.description,
+        dateISO: link.liveClass.dateISO,
+        durationMinutes: link.liveClass.durationMinutes,
+        status: link.liveClass.status,
+        url: link.liveClass.url,
+        recordingUrl: link.liveClass.recordingUrl,
+      })),
+      appliedAt: a.appliedAt,
+    }));
+  }
+
   // -- Admin moderation --
 
+  /** Lightweight row projection for the admin content-review list — skips description/
+   * cohort/schedule details, which the list row never renders. */
   async findAllForAdmin(status?: string) {
     const bootcamps = await this.prisma.bootcamp.findMany({
       where: status ? { status: status as never } : undefined,
-      include: FULL_INCLUDE,
+      select: {
+        id: true,
+        title: true,
+        format: true,
+        price: true,
+        discountPercent: true,
+        marginPercent: true,
+        status: true,
+        rejectionReason: true,
+        coverFrom: true,
+        coverTo: true,
+        coverImagePath: true,
+        category: { select: { name: true } },
+        teacher: { select: { uid: true, name: true } },
+        _count: { select: { applications: true } },
+      },
       orderBy: { createdAt: 'desc' },
     });
-    return bootcamps.map((b) => this.map(b));
+    return bootcamps.map((b) => {
+      const listPrice = computeListPrice(b.price, b.marginPercent);
+      return {
+        id: b.id,
+        title: b.title,
+        category: b.category?.name ?? null,
+        format: b.format,
+        instructor: { uid: b.teacher.uid, name: b.teacher.name },
+        price: b.price.toNumber(),
+        marginPercent: b.marginPercent,
+        finalPrice: discounted(listPrice, b.discountPercent),
+        status: b.status,
+        rejectionReason: b.rejectionReason,
+        coverTheme: { from: b.coverFrom, to: b.coverTo },
+        coverImagePath: b.coverImagePath,
+      };
+    });
   }
 
   async approve(id: string, marginPercent: number) {

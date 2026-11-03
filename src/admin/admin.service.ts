@@ -45,7 +45,15 @@ export class AdminService {
     }
   }
 
-  async findAllContent(status?: string) {
+  async findAllContent(status?: string, contentType?: ContentType) {
+    // When the admin is only looking at one tab (the common case), skip computing the
+    // other three content types entirely instead of fetching everything and discarding
+    // most of it — this was the main reason the content-review list was slow to load.
+    if (contentType) {
+      const items = await this.serviceFor(contentType).findAllForAdmin(status);
+      return items.map((item) => ({ ...item, contentType }));
+    }
+
     const [courses, ebooks, bootcamps, bundles] = await Promise.all([
       this.coursesService.findAllForAdmin(status),
       this.ebooksService.findAllForAdmin(status),

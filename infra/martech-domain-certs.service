@@ -1,0 +1,8 @@
+[Unit]
+Description=Issue TLS certs for verified teacher custom domains
+After=network.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/martech-domain-certs.env
+ExecStart=/bin/bash /var/www/martech/infra/issue-domain-certs.sh

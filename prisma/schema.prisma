@@ -35,6 +35,12 @@ enum ContentStatus {
   rejected
 }
 
+enum LiveClassStatus {
+  scheduled
+  completed
+  cancelled
+}
+
 enum MediaType {
   video
   document
@@ -76,6 +82,14 @@ enum PayoutStatus {
   pending
   processing
   paid
+  failed
+}
+
+enum PayoutAccountStatus {
+  not_submitted
+  pending
+  active
+  failed
 }
 
 enum EnquiryStatus {
@@ -109,6 +123,9 @@ model User {
   updatedAt       DateTime @updatedAt
 
   kyc Kyc?
+  payoutAccount TeacherPayoutAccount?
+  zoomAccount   TeacherZoomAccount?
+  customDomain  TeacherCustomDomain?
 
   mediaAssets             MediaAsset[]
   assignments             Assignment[]
@@ -138,6 +155,7 @@ model User {
   teacherMessages         TeacherMessage[]
   teacherBlogPosts        TeacherBlogPost[]
   teacherPages            TeacherPage[]
+  pageTemplates           PageTemplate[]
 
   @@map("users")
 }
@@ -164,6 +182,9 @@ model Category {
   name        String
   description String
   courses     Course[]
+  ebooks      Ebook[]
+  bootcamps   Bootcamp[]
+  bundles     Bundle[]
 
   @@map("categories")
 }
@@ -202,6 +223,10 @@ model Course {
   categorySlug     String
   category         Category      @relation(fields: [categorySlug], references: [slug])
   level            String
+  language         String        @default("English")
+  learningOutcomes String[]      @default([])
+  prerequisites    String?
+  audience         String?
   price            Decimal       @db.Decimal(10, 2)
   discountPercent  Int           @default(0)
   marginPercent    Int           @default(0)
@@ -211,6 +236,8 @@ model Course {
   coverTo          String
   coverImagePath   String?
   courseTemplate   String        @default("classic")
+  playerTemplate   String        @default("classic")
+  hideLessonNavbar Boolean       @default(false)
   courseAccent     String        @default("blue")
   views            Int           @default(0)
   createdAt        DateTime      @default(now())
@@ -256,7 +283,8 @@ model CourseLesson {
   quiz        Quiz?        @relation(fields: [quizId], references: [id], onDelete: SetNull)
   order       Int
 
-  progress LessonProgress[]
+  progress     LessonProgress[]
+  quizAttempts QuizAttempt[]
 
   @@map("course_lessons")
 }
@@ -333,6 +361,7 @@ model Quiz {
   questions QuizQuestion[]
   courses   CourseQuiz[]
   lessons   CourseLesson[]
+  attempts  QuizAttempt[]
 
   @@map("quizzes")
 }
@@ -358,6 +387,24 @@ model CourseQuiz {
 
   @@unique([courseId, quizId])
   @@map("course_quizzes")
+}
+
+/** A student's answers for a quiz lesson — one attempt per enrollment+lesson; resubmitting overwrites it. */
+model QuizAttempt {
+  id             String       @id @default(uuid())
+  enrollmentId   String
+  enrollment     Enrollment   @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  lessonId       String
+  lesson         CourseLesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  quizId         String
+  quiz           Quiz         @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  answers        Int[]
+  score          Int
+  totalQuestions Int
+  submittedAt    DateTime     @default(now())
+
+  @@unique([enrollmentId, lessonId])
+  @@map("quiz_attempts")
 }
 
 /**
@@ -399,19 +446,70 @@ model CourseLibraryEbook {
  * A teacher's shared live-class library — one scheduled session can be attached to many courses via CourseLiveClass.
  */
 model LiveClass {
-  id          String   @id @default(uuid())
-  teacherUid  String
-  teacher     User     @relation(fields: [teacherUid], references: [uid], onDelete: Cascade)
-  title       String
-  description String?
-  tags        String[] @default([])
-  dateISO     DateTime
-  url         String
-  createdAt   DateTime @default(now())
+  id              String          @id @default(uuid())
+  teacherUid      String
+  teacher         User            @relation(fields: [teacherUid], references: [uid], onDelete: Cascade)
+  title           String
+  description     String?
+  tags            String[]        @default([])
+  dateISO         DateTime
+  durationMinutes Int             @default(60)
+  url             String
+  status          LiveClassStatus @default(scheduled)
+  recordingUrl    String?
+  /** Set when this session's join link was created via the Zoom API rather than pasted
+   * manually — lets update()/remove() keep the same Zoom meeting in sync on reschedule/delete. */
+  zoomMeetingId   String?
+  /** Host-only "start meeting" link from Zoom — never shown to students, only the teacher. */
+  zoomStartUrl    String?
+  createdAt       DateTime        @default(now())
 
-  courses CourseLiveClass[]
+  courses   CourseLiveClass[]
+  bootcamps BootcampLiveClass[]
 
   @@map("live_classes")
+}
+
+/**
+ * A teacher's own Zoom OAuth connection — each teacher authorizes their personal Zoom account,
+ * so meetings are created under their own identity, never a shared/admin account.
+ */
+model TeacherZoomAccount {
+  teacherUid   String   @id
+  teacher      User     @relation(fields: [teacherUid], references: [uid], onDelete: Cascade)
+  zoomUserId   String
+  zoomEmail    String?
+  accessToken  String
+  refreshToken String
+  expiresAt    DateTime
+  scope        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("teacher_zoom_accounts")
+}
+
+/**
+ * A teacher's custom domain for their public instructor profile — e.g. a teacher
+ * points "coach.example.com" here via DNS, and it serves /instructors/[uid] at that
+ * domain directly (no redirect). `verificationToken` is the value the teacher puts in
+ * a TXT record to prove ownership before the domain goes live; `certificateIssued`
+ * tracks whether the server-side cert-issuance job has provisioned TLS for it yet.
+ */
+model TeacherCustomDomain {
+  teacherUid         String    @id
+  teacher            User      @relation(fields: [teacherUid], references: [uid], onDelete: Cascade)
+  domain             String    @unique
+  verificationToken  String
+  verified           Boolean   @default(false)
+  verifiedAt         DateTime?
+  certificateIssued  Boolean   @default(false)
+  certificateIssuedAt DateTime?
+  lastCheckedAt      DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@map("teacher_custom_domains")
 }
 
 model CourseLiveClass {
@@ -425,27 +523,46 @@ model CourseLiveClass {
   @@map("course_live_classes")
 }
 
+model BootcampLiveClass {
+  id          String    @id @default(uuid())
+  bootcampId  String
+  bootcamp    Bootcamp  @relation(fields: [bootcampId], references: [id], onDelete: Cascade)
+  liveClassId String
+  liveClass   LiveClass @relation(fields: [liveClassId], references: [id], onDelete: Cascade)
+
+  @@unique([bootcampId, liveClassId])
+  @@map("bootcamp_live_classes")
+}
+
 model Ebook {
-  id              String        @id @default(uuid())
-  slug            String        @unique
-  teacherUid      String
-  teacher         User          @relation(fields: [teacherUid], references: [uid], onDelete: Cascade)
-  title           String
-  description     String
-  format          String
-  price           Decimal       @db.Decimal(10, 2)
-  discountPercent Int           @default(0)
-  marginPercent   Int           @default(0)
-  status          ContentStatus @default(draft)
-  rejectionReason String?
-  coverFrom       String
-  coverTo         String
-  coverImagePath  String?
-  pages           Int
-  libraryEbookId  String?
-  libraryEbook    LibraryEbook? @relation(fields: [libraryEbookId], references: [id], onDelete: SetNull)
-  views           Int           @default(0)
-  createdAt       DateTime      @default(now())
+  id                String        @id @default(uuid())
+  slug              String        @unique
+  teacherUid        String
+  teacher           User          @relation(fields: [teacherUid], references: [uid], onDelete: Cascade)
+  title             String
+  description       String
+  format            String
+  price             Decimal       @db.Decimal(10, 2)
+  discountPercent   Int           @default(0)
+  marginPercent     Int           @default(0)
+  status            ContentStatus @default(draft)
+  rejectionReason   String?
+  coverFrom         String
+  coverTo           String
+  coverImagePath    String?
+  pages             Int
+  libraryEbookId    String?
+  libraryEbook      LibraryEbook? @relation(fields: [libraryEbookId], references: [id], onDelete: SetNull)
+  views             Int           @default(0)
+  createdAt         DateTime      @default(now())
+
+  categorySlug      String?
+  category          Category?     @relation(fields: [categorySlug], references: [slug])
+  longDescription   String        @default("")
+  fileSizeMB        Float         @default(0)
+  rating            Float         @default(0)
+  previewParagraphs String[]      @default([])
+  fullParagraphs    String[]      @default([])
 
   purchases EbookPurchase[]
 
@@ -461,6 +578,7 @@ model Bootcamp {
   tagline             String
   description         String
   format              String
+  location            String?
   price               Decimal       @db.Decimal(10, 2)
   discountPercent     Int           @default(0)
   marginPercent       Int           @default(0)
@@ -477,8 +595,20 @@ model Bootcamp {
   views               Int           @default(0)
   createdAt           DateTime      @default(now())
 
+  categorySlug          String?
+  category              Category? @relation(fields: [categorySlug], references: [slug])
+  level                 String?
+  hoursPerWeek          Int       @default(0)
+  rating                Float     @default(0)
+  studentsGraduated     Int       @default(0)
+  outcomes              String[]  @default([])
+  modules               Json      @default("[]")
+  admissionRequirements String[]  @default([])
+  careerSupport         String[]  @default([])
+
   applications BootcampApplication[]
   courses      BootcampCourse[]
+  liveClasses  BootcampLiveClass[]
 
   @@map("bootcamps")
 }
@@ -500,6 +630,7 @@ model Bundle {
   teacherUid      String
   teacher         User          @relation(fields: [teacherUid], references: [uid], onDelete: Cascade)
   title           String
+  tagline         String        @default("")
   description     String
   price           Decimal       @db.Decimal(10, 2)
   discountPercent Int           @default(0)
@@ -511,6 +642,14 @@ model Bundle {
   coverImagePath  String?
   views           Int           @default(0)
   createdAt       DateTime      @default(now())
+
+  categorySlug String?
+  category     Category? @relation(fields: [categorySlug], references: [slug])
+  level        String?
+  rating       Float     @default(0)
+  badge        String?
+  highlights   String[]  @default([])
+  audience     String    @default("")
 
   courses   BundleCourse[]
   purchases BundlePurchase[]
@@ -595,7 +734,8 @@ model Enrollment {
   purchaseId String?
   enrolledAt DateTime @default(now())
 
-  progress LessonProgress[]
+  progress     LessonProgress[]
+  quizAttempts QuizAttempt[]
 
   @@unique([userUid, courseId])
   @@map("enrollments")
@@ -674,10 +814,38 @@ model Payout {
   amount      Decimal      @db.Decimal(10, 2)
   status      PayoutStatus @default(pending)
   method      String
+  /** Set when this row was auto-created by a Route transfer attempt — holds the Razorpay
+   * error message on failure, so admin can see why an automatic payout didn't go through. */
+  note        String?
   dateISO     DateTime
   createdAt   DateTime     @default(now())
 
   @@map("payouts")
+}
+
+/** A teacher's Razorpay Route "linked account" details — where their share of a course
+ * purchase is automatically transferred. Submission attempts creating the linked account
+ * with Razorpay immediately; status reflects how that attempt went (see payout-accounts.service.ts). */
+model TeacherPayoutAccount {
+  userUid               String              @id
+  user                  User                @relation(fields: [userUid], references: [uid], onDelete: Cascade)
+  legalName             String
+  pan                   String?
+  addressLine           String
+  city                  String
+  state                 String
+  postalCode            String
+  accountHolderName     String
+  accountNumber         String?
+  ifsc                  String?
+  upiVpa                String?
+  razorpayAccountId     String?
+  razorpayProductId     String?
+  status                PayoutAccountStatus @default(not_submitted)
+  statusMessage         String?
+  updatedAt             DateTime            @updatedAt
+
+  @@map("teacher_payout_accounts")
 }
 
 /**
@@ -793,4 +961,52 @@ model TeacherPage {
 
   @@unique([teacherUid, slug])
   @@map("teacher_pages")
+}
+
+/** An admin-authored instructor-profile template: raw HTML + Tailwind classes with {{token}} placeholders, compiled per-instructor via Handlebars at render time. Selectable by teachers alongside the built-in classic/editorial/minimal templates. */
+model PageTemplate {
+  id           String   @id @default(uuid())
+  key          String   @unique
+  name         String
+  description  String   @default("")
+  htmlSource   String
+  isActive     Boolean  @default(true)
+  createdByUid String
+  createdBy    User     @relation(fields: [createdByUid], references: [uid], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("page_templates")
+}
+
+/** Single-row (id is always "singleton") store for admin-editable runtime config — currently just
+ * the Razorpay credentials, so an admin can set/rotate them from the admin panel instead of editing
+ * the server's .env and restarting. Secrets are read fresh on every use, never cached in memory,
+ * so a saved change takes effect on the very next request. */
+model AppSettings {
+  id                    String   @id @default("singleton")
+  razorpayKeyId         String?
+  razorpayKeySecret     String?
+  razorpayWebhookSecret String?
+  resendApiKey          String?
+  resendFromEmail       String?
+  payoutUpiId           String?
+  payoutAccountName     String?
+  payoutAccountNumber   String?
+  payoutIfsc            String?
+  updatedByUid          String?
+  updatedAt             DateTime @updatedAt
+
+  @@map("app_settings")
+}
+
+model ContactMessage {
+  id          String   @id @default(uuid())
+  name        String
+  email       String
+  enquiryType String
+  message     String
+  createdAt   DateTime @default(now())
+
+  @@map("contact_messages")
 }

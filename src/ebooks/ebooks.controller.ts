@@ -15,6 +15,8 @@ import { FirebaseAuthGuard } from '../auth/firebase-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { CurrentProfile } from '../auth/current-profile.decorator';
+import { CurrentUser } from '../auth/current-user.decorator';
+import type { DecodedIdToken } from 'firebase-admin/auth';
 import type { User } from '@prisma/client';
 import { EbooksService } from './ebooks.service';
 import { CreateEbookDto } from './dto/create-ebook.dto';
@@ -30,6 +32,18 @@ export class EbooksController {
   @Get('ebooks')
   findPublished(@Query('instructor') teacherUid?: string) {
     return this.ebooksService.findPublished(teacherUid);
+  }
+
+  @Get('ebooks/mine')
+  @UseGuards(FirebaseAuthGuard)
+  findMine(@CurrentUser() user: DecodedIdToken) {
+    return this.ebooksService.findMine(user.uid);
+  }
+
+  @Post('ebooks/:id/claim')
+  @UseGuards(FirebaseAuthGuard)
+  claimFree(@CurrentUser() user: DecodedIdToken, @Param('id') id: string) {
+    return this.ebooksService.claimFree(user.uid, id);
   }
 
   @Get('ebooks/:slug')

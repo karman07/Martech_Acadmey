@@ -11,6 +11,8 @@ import { computeListPrice, discounted } from '../common/pricing.util';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { VerifyPaymentDto } from './dto/verify-payment.dto';
 import type { PurchaseType } from '@prisma/client';
+import { CourseNotificationsService } from '../mail/course-notifications.service';
+import { PayoutsService } from '../payouts/payouts.service';
 
 type Purchasable = {
   id: string;
@@ -25,6 +27,8 @@ export class PaymentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly razorpay: RazorpayService,
+    private readonly courseNotifications: CourseNotificationsService,
+    private readonly payouts: PayoutsService,
   ) {}
 
   private async loadContent(
@@ -142,7 +146,7 @@ export class PaymentsService {
       orderId: order.id,
       amount: order.amount,
       currency: order.currency,
-      keyId: this.razorpay.keyId,
+      keyId: await this.razorpay.getKeyId(),
     };
   }
 
@@ -179,7 +183,7 @@ export class PaymentsService {
       return { status: 'paid' };
     }
 
-    const valid = this.razorpay.verifyPaymentSignature(
+    const valid = await this.razorpay.verifyPaymentSignature(
       dto.razorpay_order_id,
       dto.razorpay_payment_id,
       dto.razorpay_signature,
@@ -220,6 +224,67 @@ export class PaymentsService {
       purchase.refId,
       purchase.id,
     );
+
+    if (purchase.type === 'course') {
+      await this.courseNotifications.notifyEnrollment(purchase.refId, purchase.userUid);
+      await this.courseNotifications.notifyPaymentSplit(purchase.refId, purchase.amount.toNumber());
+      await this.attemptAutomaticPayout(purchase.refId, purchase.amount.toNumber());
+    }
+  }
+
+  /** Attempts to automatically transfer the teacher's share via Razorpay Route, then
+   * records the outcome as a Payout row either way — so the existing admin Payouts ledger
+   * always reflects reality, whether or not Route is actually active yet. Never throws:
+   * a payout problem must never break payment completion for the student. */
+  private async attemptAutomaticPayout(courseId: string, purchaseAmount: number) {
+    try {
+      const course = await this.prisma.course.findUnique({
+        where: { id: courseId },
+        select: { title: true, price: true, teacherUid: true },
+      });
+      if (!course) return;
+
+      const teacherEarning = course.price.toNumber();
+      const payoutAccount = await this.prisma.teacherPayoutAccount.findUnique({
+        where: { userUid: course.teacherUid },
+      });
+
+      if (payoutAccount?.status === 'active' && payoutAccount.razorpayAccountId) {
+        try {
+          await this.razorpay.transferToLinkedAccount(
+            payoutAccount.razorpayAccountId,
+            Math.round(teacherEarning * 100),
+          );
+          await this.payouts.createAutomatic({
+            teacherUid: course.teacherUid,
+            periodLabel: course.title,
+            amount: teacherEarning,
+            status: 'paid',
+            method: 'Razorpay Route (automatic)',
+          });
+        } catch (err) {
+          await this.payouts.createAutomatic({
+            teacherUid: course.teacherUid,
+            periodLabel: course.title,
+            amount: teacherEarning,
+            status: 'failed',
+            method: 'Razorpay Route (automatic)',
+            note: err instanceof Error ? err.message : 'Transfer failed.',
+          });
+        }
+      } else {
+        await this.payouts.createAutomatic({
+          teacherUid: course.teacherUid,
+          periodLabel: course.title,
+          amount: teacherEarning,
+          status: 'pending',
+          method: 'Razorpay Route (automatic)',
+          note: 'Teacher has not set up an active payout account yet.',
+        });
+      }
+    } catch {
+      // Payout bookkeeping must never break the payment-completion response.
+    }
   }
 
   async markFailed(razorpayOrderId: string) {

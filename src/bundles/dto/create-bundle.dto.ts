@@ -1,6 +1,7 @@
 import {
   ArrayMinSize,
   IsArray,
+  IsIn,
   IsInt,
   IsNumber,
   IsOptional,
@@ -10,10 +11,16 @@ import {
   MinLength,
 } from 'class-validator';
 
+const BADGES = ['Best seller', 'New', 'Staff pick'];
+
 export class CreateBundleDto {
   @IsString()
   @MinLength(3)
   title: string;
+
+  @IsOptional()
+  @IsString()
+  tagline?: string;
 
   @IsString()
   @MinLength(3)
@@ -39,4 +46,25 @@ export class CreateBundleDto {
 
   @IsString()
   coverTo: string;
+
+  @IsOptional()
+  @IsString()
+  categorySlug?: string;
+
+  @IsOptional()
+  @IsString()
+  level?: string;
+
+  @IsOptional()
+  @IsIn(BADGES)
+  badge?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  highlights?: string[];
+
+  @IsOptional()
+  @IsString()
+  audience?: string;
 }

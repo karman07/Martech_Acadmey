@@ -1,0 +1,10 @@
+[Unit]
+Description=Run martech-domain-certs.service every 5 minutes
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=5min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

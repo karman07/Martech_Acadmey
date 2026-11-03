@@ -31,6 +31,14 @@ const FULL_INCLUDE = {
   teacher: true,
   _count: { select: { enrollments: true, reviews: true } },
   reviews: { select: { rating: true } },
+  bundleLinks: {
+    include: { bundle: { select: { slug: true, title: true, status: true } } },
+  },
+  bootcampLinks: {
+    include: {
+      bootcamp: { select: { slug: true, title: true, status: true } },
+    },
+  },
 };
 
 type CourseWithRelations = Prisma.CourseGetPayload<{
@@ -61,6 +69,13 @@ const ADMIN_INCLUDE = {
       },
     },
     orderBy: { order: 'asc' as const },
+  },
+  assignmentLinks: { include: { assignment: true } },
+  activityLinks: { include: { activity: true } },
+  quizLinks: {
+    include: {
+      quiz: { include: { questions: { orderBy: { order: 'asc' as const } } } },
+    },
   },
 };
 
@@ -102,6 +117,10 @@ export class CoursesService {
       category: course.category.slug,
       categoryName: course.category.name,
       level: course.level,
+      language: course.language,
+      learningOutcomes: course.learningOutcomes,
+      prerequisites: course.prerequisites,
+      audience: course.audience,
       price: course.price.toNumber(),
       discountPercent: course.discountPercent,
       marginPercent: course.marginPercent,
@@ -112,6 +131,8 @@ export class CoursesService {
       coverTheme: { from: course.coverFrom, to: course.coverTo },
       coverImagePath: course.coverImagePath,
       courseTemplate: course.courseTemplate,
+      playerTemplate: course.playerTemplate,
+      hideLessonNavbar: course.hideLessonNavbar,
       courseAccent: course.courseAccent,
       rating: Math.round(avgRating * 10) / 10,
       reviewCount: course.reviews.length,
@@ -134,6 +155,14 @@ export class CoursesService {
       })),
       createdAt: course.createdAt,
       updatedAt: course.updatedAt,
+      partOfBundles: course.bundleLinks
+        .map((l) => l.bundle)
+        .filter((b) => b.status === 'published')
+        .map((b) => ({ slug: b.slug, title: b.title })),
+      partOfBootcamps: course.bootcampLinks
+        .map((l) => l.bootcamp)
+        .filter((b) => b.status === 'published')
+        .map((b) => ({ slug: b.slug, title: b.title })),
     };
   }
 
@@ -149,10 +178,16 @@ export class CoursesService {
           title: l.title,
           type: l.type,
           durationMin: l.durationMin,
+          url: l.url,
+          mediaId: l.mediaId,
+          quizId: l.quizId,
           order: l.order,
           quizQuestionCount: l.quiz ? l.quiz._count.questions : null,
         })),
       })),
+      assignments: course.assignmentLinks.map((link) => link.assignment),
+      activities: course.activityLinks.map((link) => link.activity),
+      quizzes: course.quizLinks.map((link) => link.quiz),
       contentCounts: {
         lessons: course.modules.reduce((sum, m) => sum + m.lessons.length, 0),
         assignments: course._count.assignmentLinks,
@@ -196,6 +231,10 @@ export class CoursesService {
         previewVideoUrl: dto.previewVideoUrl ?? null,
         categorySlug: dto.categorySlug,
         level: dto.level,
+        language: dto.language,
+        learningOutcomes: dto.learningOutcomes,
+        prerequisites: dto.prerequisites ?? null,
+        audience: dto.audience ?? null,
         price: dto.price,
         discountPercent: dto.discountPercent ?? 0,
         coverFrom: dto.coverFrom,
@@ -213,7 +252,18 @@ export class CoursesService {
       include: FULL_INCLUDE,
       orderBy: { createdAt: 'desc' },
     });
-    return courses.map((c) => this.map(c));
+
+    const purchaseCounts = await this.prisma.purchase.groupBy({
+      by: ['refId'],
+      where: { type: 'course', refId: { in: courses.map((c) => c.id) }, status: 'paid' },
+      _count: { _all: true },
+    });
+    const purchasesByCourseId = new Map(purchaseCounts.map((p) => [p.refId, p._count._all]));
+
+    return courses.map((c) => ({
+      ...this.map(c),
+      purchases: purchasesByCourseId.get(c.id) ?? 0,
+    }));
   }
 
   private async findRawOrThrow(id: string) {
@@ -308,7 +358,12 @@ export class CoursesService {
     // Picking a page layout or accent color is purely cosmetic — unlike
     // every other editable field here, it shouldn't unpublish a live course
     // or force it back through review.
-    const COSMETIC_FIELDS = new Set(['courseTemplate', 'courseAccent']);
+    const COSMETIC_FIELDS = new Set([
+      'courseTemplate',
+      'playerTemplate',
+      'hideLessonNavbar',
+      'courseAccent',
+    ]);
     const isCosmeticOnly = Object.keys(dto).every((key) =>
       COSMETIC_FIELDS.has(key),
     );
@@ -334,6 +389,37 @@ export class CoursesService {
     const updated = await this.prisma.course.update({
       where: { id },
       data: { status: 'pending_review', rejectionReason: null },
+      include: FULL_INCLUDE,
+    });
+    return this.map(updated);
+  }
+
+  /** Teacher pulls their own live course back down. Sets it back to draft — the same
+   * "hidden from the public catalog, editable, resubmittable" state an edit already puts
+   * a published course into, just without requiring an edit to trigger it. Already-enrolled
+   * students are unaffected: their access is enrollment-scoped, not status-scoped. */
+  async unpublish(teacherUid: string, id: string) {
+    const course = await this.assertOwnedEditable(teacherUid, id);
+    if (course.status !== 'published') {
+      throw new BadRequestException('Only a published course can be unpublished');
+    }
+    const updated = await this.prisma.course.update({
+      where: { id },
+      data: { status: 'draft' },
+      include: FULL_INCLUDE,
+    });
+    return this.map(updated);
+  }
+
+  /** Admin-initiated equivalent of unpublish() — no ownership check, admin can take back any course. */
+  async unpublishByAdmin(id: string) {
+    const course = await this.findRawOrThrow(id);
+    if (course.status !== 'published') {
+      throw new BadRequestException('Only a published course can be unpublished');
+    }
+    const updated = await this.prisma.course.update({
+      where: { id },
+      data: { status: 'draft' },
       include: FULL_INCLUDE,
     });
     return this.map(updated);
@@ -626,13 +712,50 @@ export class CoursesService {
 
   // -- Admin moderation --
 
+  /** Lightweight row projection for the admin content-review list — deliberately skips
+   * modules/lessons/quizzes/assignments/reviews (only needed on the single-course detail
+   * page, see findOneForAdmin) since the list row only ever renders a title/price/margin
+   * summary. Fetching the full curriculum tree for every course on every list load was the
+   * main cause of the admin Content Review page being slow to render. */
   async findAllForAdmin(status?: string) {
     const courses = await this.prisma.course.findMany({
       where: status ? { status: status as never } : undefined,
-      include: ADMIN_INCLUDE,
+      select: {
+        id: true,
+        title: true,
+        level: true,
+        price: true,
+        discountPercent: true,
+        marginPercent: true,
+        status: true,
+        rejectionReason: true,
+        coverFrom: true,
+        coverTo: true,
+        coverImagePath: true,
+        category: { select: { name: true } },
+        teacher: { select: { uid: true, name: true } },
+        _count: { select: { enrollments: true } },
+      },
       orderBy: { createdAt: 'desc' },
     });
-    return courses.map((c) => this.mapForAdmin(c));
+    return courses.map((c) => {
+      const listPrice = computeListPrice(c.price, c.marginPercent);
+      return {
+        id: c.id,
+        title: c.title,
+        category: c.category?.name ?? null,
+        level: c.level,
+        instructor: { uid: c.teacher.uid, name: c.teacher.name },
+        price: c.price.toNumber(),
+        marginPercent: c.marginPercent,
+        finalPrice: discounted(listPrice, c.discountPercent),
+        status: c.status,
+        rejectionReason: c.rejectionReason,
+        coverTheme: { from: c.coverFrom, to: c.coverTo },
+        coverImagePath: c.coverImagePath,
+        studentsEnrolled: c._count.enrollments,
+      };
+    });
   }
 
   async findOneForAdmin(id: string) {

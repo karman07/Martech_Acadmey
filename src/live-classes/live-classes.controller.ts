@@ -16,6 +16,7 @@ import type { User } from '@prisma/client';
 import { LiveClassesService } from './live-classes.service';
 import { CreateLiveClassDto } from './dto/create-live-class.dto';
 import { UpdateLiveClassDto } from './dto/update-live-class.dto';
+import { AddRecordingDto } from './dto/add-recording.dto';
 
 @Controller('live-classes')
 @UseGuards(FirebaseAuthGuard, RolesGuard)
@@ -47,6 +48,15 @@ export class LiveClassesController {
     return this.liveClassesService.remove(profile.uid, id);
   }
 
+  @Post(':id/recording')
+  addRecording(
+    @CurrentProfile() profile: User,
+    @Param('id') id: string,
+    @Body() dto: AddRecordingDto,
+  ) {
+    return this.liveClassesService.addRecording(profile.uid, id, dto.recordingUrl);
+  }
+
   @Post(':id/courses/:courseId')
   toggleCourse(
     @CurrentProfile() profile: User,
@@ -54,5 +64,14 @@ export class LiveClassesController {
     @Param('courseId') courseId: string,
   ) {
     return this.liveClassesService.toggleCourse(profile.uid, id, courseId);
+  }
+
+  @Post(':id/bootcamps/:bootcampId')
+  toggleBootcamp(
+    @CurrentProfile() profile: User,
+    @Param('id') id: string,
+    @Param('bootcampId') bootcampId: string,
+  ) {
+    return this.liveClassesService.toggleBootcamp(profile.uid, id, bootcampId);
   }
 }

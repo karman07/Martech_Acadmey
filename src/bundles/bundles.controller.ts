@@ -14,6 +14,8 @@ import { FirebaseAuthGuard } from '../auth/firebase-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { CurrentProfile } from '../auth/current-profile.decorator';
+import { CurrentUser } from '../auth/current-user.decorator';
+import type { DecodedIdToken } from 'firebase-admin/auth';
 import type { User } from '@prisma/client';
 import { BundlesService } from './bundles.service';
 import { CreateBundleDto } from './dto/create-bundle.dto';
@@ -29,6 +31,12 @@ export class BundlesController {
   @Get('bundles')
   findPublished() {
     return this.bundlesService.findPublished();
+  }
+
+  @Get('bundles/mine')
+  @UseGuards(FirebaseAuthGuard)
+  findMine(@CurrentUser() user: DecodedIdToken) {
+    return this.bundlesService.findMine(user.uid);
   }
 
   @Get('bundles/:slug')

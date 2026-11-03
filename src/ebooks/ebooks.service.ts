@@ -14,6 +14,7 @@ import { UpdateEbookDto } from './dto/update-ebook.dto';
 
 const FULL_INCLUDE = {
   teacher: true,
+  category: true,
   libraryEbook: { select: { id: true, title: true, fileType: true, pageCount: true, storagePath: true } },
   _count: { select: { purchases: true } },
 };
@@ -35,7 +36,13 @@ export class EbooksService {
       id: ebook.id,
       slug: ebook.slug,
       teacherUid: ebook.teacherUid,
-      instructor: { uid: ebook.teacher.uid, name: ebook.teacher.name },
+      instructor: {
+        uid: ebook.teacher.uid,
+        name: ebook.teacher.name,
+        title: ebook.teacher.expertise ?? null,
+        bio: ebook.teacher.bio ?? null,
+        avatarPath: ebook.teacher.avatarPath ?? null,
+      },
       title: ebook.title,
       description: ebook.description,
       format: ebook.format,
@@ -53,7 +60,15 @@ export class EbooksService {
       libraryEbookTitle: ebook.libraryEbook?.title ?? null,
       views: ebook.views,
       purchases: ebook._count.purchases,
+      downloads: ebook._count.purchases,
       createdAt: ebook.createdAt,
+      categorySlug: ebook.categorySlug,
+      categoryName: ebook.category?.name ?? null,
+      longDescription: ebook.longDescription,
+      fileSizeMB: ebook.fileSizeMB,
+      rating: ebook.rating,
+      previewParagraphs: ebook.previewParagraphs,
+      fullParagraphs: ebook.fullParagraphs,
     };
   }
 
@@ -98,6 +113,11 @@ export class EbooksService {
         coverFrom: dto.coverFrom,
         coverTo: dto.coverTo,
         libraryEbookId: libraryEbook.id,
+        categorySlug: dto.categorySlug,
+        longDescription: dto.longDescription ?? '',
+        fileSizeMB: dto.fileSizeMB ?? 0,
+        previewParagraphs: dto.previewParagraphs ?? [],
+        fullParagraphs: dto.fullParagraphs ?? [],
       },
       include: FULL_INCLUDE,
     });
@@ -217,15 +237,84 @@ export class EbooksService {
     return this.map({ ...ebook, views: ebook.views + 1 });
   }
 
+  async findMine(userUid: string) {
+    const purchases = await this.prisma.ebookPurchase.findMany({
+      where: { userUid },
+      include: { ebook: { include: FULL_INCLUDE } },
+      orderBy: { purchasedAt: 'desc' },
+    });
+    return purchases.map((p) => ({
+      ...this.map(p.ebook),
+      purchasedAt: p.purchasedAt,
+    }));
+  }
+
+  /** Free ebooks (finalPrice === 0) skip /payments — claimed directly, idempotently. */
+  async claimFree(userUid: string, ebookId: string) {
+    const ebook = await this.prisma.ebook.findUnique({
+      where: { id: ebookId },
+    });
+    if (!ebook || ebook.status !== 'published') {
+      throw new NotFoundException('Ebook not found');
+    }
+
+    const listPrice = computeListPrice(ebook.price, ebook.marginPercent);
+    const finalPrice = discounted(listPrice, ebook.discountPercent);
+    if (finalPrice > 0) {
+      throw new BadRequestException(
+        'This ebook requires payment — use /payments/order',
+      );
+    }
+
+    return this.prisma.ebookPurchase.upsert({
+      where: { userUid_ebookId: { userUid, ebookId } },
+      update: {},
+      create: { userUid, ebookId },
+    });
+  }
+
   // -- Admin moderation --
 
+  /** Lightweight row projection for the admin content-review list — skips description/
+   * longDescription/previewParagraphs/fullParagraphs, which the list row never renders. */
   async findAllForAdmin(status?: string) {
     const ebooks = await this.prisma.ebook.findMany({
       where: status ? { status: status as never } : undefined,
-      include: FULL_INCLUDE,
+      select: {
+        id: true,
+        title: true,
+        format: true,
+        price: true,
+        discountPercent: true,
+        marginPercent: true,
+        status: true,
+        rejectionReason: true,
+        coverFrom: true,
+        coverTo: true,
+        coverImagePath: true,
+        category: { select: { name: true } },
+        teacher: { select: { uid: true, name: true } },
+        _count: { select: { purchases: true } },
+      },
       orderBy: { createdAt: 'desc' },
     });
-    return ebooks.map((e) => this.map(e));
+    return ebooks.map((e) => {
+      const listPrice = computeListPrice(e.price, e.marginPercent);
+      return {
+        id: e.id,
+        title: e.title,
+        category: e.category?.name ?? null,
+        format: e.format,
+        instructor: { uid: e.teacher.uid, name: e.teacher.name },
+        price: e.price.toNumber(),
+        marginPercent: e.marginPercent,
+        finalPrice: discounted(listPrice, e.discountPercent),
+        status: e.status,
+        rejectionReason: e.rejectionReason,
+        coverTheme: { from: e.coverFrom, to: e.coverTo },
+        coverImagePath: e.coverImagePath,
+      };
+    });
   }
 
   async approve(id: string, marginPercent: number) {

@@ -4,6 +4,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import type { DecodedIdToken } from 'firebase-admin/auth';
 import { EnrollmentsService } from './enrollments.service';
 import { CreateEnrollmentDto } from './dto/create-enrollment.dto';
+import { SubmitQuizAttemptDto } from './dto/submit-quiz-attempt.dto';
 
 @Controller('enrollments')
 @UseGuards(FirebaseAuthGuard)
@@ -33,6 +34,30 @@ export class EnrollmentsController {
       user.uid,
       courseId,
       lessonId,
+    );
+  }
+
+  @Get(':courseId/lessons/:lessonId/quiz')
+  getLessonQuiz(
+    @CurrentUser() user: DecodedIdToken,
+    @Param('courseId') courseId: string,
+    @Param('lessonId') lessonId: string,
+  ) {
+    return this.enrollmentsService.getLessonQuiz(user.uid, courseId, lessonId);
+  }
+
+  @Post(':courseId/lessons/:lessonId/quiz/submit')
+  submitLessonQuiz(
+    @CurrentUser() user: DecodedIdToken,
+    @Param('courseId') courseId: string,
+    @Param('lessonId') lessonId: string,
+    @Body() dto: SubmitQuizAttemptDto,
+  ) {
+    return this.enrollmentsService.submitLessonQuiz(
+      user.uid,
+      courseId,
+      lessonId,
+      dto.answers,
     );
   }
 }

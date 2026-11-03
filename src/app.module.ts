@@ -32,6 +32,12 @@ import { TeacherBannerImagesModule } from './teacher-banner-images/teacher-banne
 import { TeacherMessagesModule } from './teacher-messages/teacher-messages.module';
 import { TeacherBlogPostsModule } from './teacher-blog-posts/teacher-blog-posts.module';
 import { TeacherPagesModule } from './teacher-pages/teacher-pages.module';
+import { PageTemplatesModule } from './page-templates/page-templates.module';
+import { SettingsModule } from './settings/settings.module';
+import { MailModule } from './mail/mail.module';
+import { ZoomModule } from './zoom/zoom.module';
+import { DomainsModule } from './domains/domains.module';
+import { ContactModule } from './contact/contact.module';
 
 @Module({
   imports: [
@@ -70,6 +76,12 @@ import { TeacherPagesModule } from './teacher-pages/teacher-pages.module';
     TeacherMessagesModule,
     TeacherBlogPostsModule,
     TeacherPagesModule,
+    PageTemplatesModule,
+    SettingsModule,
+    MailModule,
+    ZoomModule,
+    DomainsModule,
+    ContactModule,
   ],
   controllers: [AppController],
   providers: [AppService],

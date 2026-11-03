@@ -30,8 +30,11 @@ export class AdminController {
   }
 
   @Get('content')
-  findAllContent(@Query('status') status?: string) {
-    return this.adminService.findAllContent(status);
+  findAllContent(
+    @Query('status') status?: string,
+    @Query('contentType') contentType?: ContentType,
+  ) {
+    return this.adminService.findAllContent(status, contentType);
   }
 
   @Get('users')

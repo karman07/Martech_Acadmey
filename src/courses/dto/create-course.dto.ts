@@ -1,10 +1,14 @@
 import {
+  ArrayMaxSize,
+  IsArray,
+  IsBoolean,
   IsIn,
   IsInt,
   IsNumber,
   IsOptional,
   IsString,
   Max,
+  MaxLength,
   Min,
   MinLength,
 } from 'class-validator';
@@ -13,6 +17,7 @@ const LEVELS = ['Beginner', 'Intermediate', 'Advanced'];
 const WIDTHS = ['narrow', 'medium', 'wide', 'full'];
 const COURSE_TEMPLATES = ['classic', 'editorial', 'minimal'];
 const COURSE_ACCENTS = [
+  'clay',
   'blue',
   'emerald',
   'violet',
@@ -49,6 +54,28 @@ export class CreateCourseDto {
   @IsIn(LEVELS)
   level: string;
 
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  language?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(12)
+  @IsString({ each: true })
+  @MaxLength(200, { each: true })
+  learningOutcomes?: string[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(600)
+  prerequisites?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(600)
+  audience?: string;
+
   @IsNumber()
   @Min(0)
   price: number;
@@ -68,6 +95,14 @@ export class CreateCourseDto {
   @IsOptional()
   @IsIn(COURSE_TEMPLATES)
   courseTemplate?: string;
+
+  @IsOptional()
+  @IsIn(COURSE_TEMPLATES)
+  playerTemplate?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  hideLessonNavbar?: boolean;
 
   @IsOptional()
   @IsIn(COURSE_ACCENTS)

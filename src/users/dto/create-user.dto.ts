@@ -48,11 +48,11 @@ export class CreateUserDto {
   bio?: string;
 
   @IsOptional()
-  @IsIn(['classic', 'editorial', 'minimal'])
+  @IsString()
   profileTemplate?: string;
 
   @IsOptional()
-  @IsIn(['blue', 'emerald', 'violet', 'rose', 'amber', 'cyan', 'slate'])
+  @IsIn(['clay', 'blue', 'emerald', 'violet', 'rose', 'amber', 'cyan', 'slate'])
   profileAccent?: string;
 
   @IsOptional()

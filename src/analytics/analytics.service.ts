@@ -37,11 +37,16 @@ export class AnalyticsService {
     });
 
     const months = lastNMonths(12);
-    const byMonth = new Map(months.map((m) => [m.key, { month: m.label, revenue: 0, enrollments: 0 }]));
+    const byMonth = new Map(
+      months.map((m) => [m.key, { month: m.label, revenue: 0, purchases: 0, enrollments: 0 }]),
+    );
 
     for (const purchase of purchases) {
       const bucket = byMonth.get(monthKey(purchase.createdAt));
-      if (bucket) bucket.revenue += purchase.amount.toNumber();
+      if (bucket) {
+        bucket.revenue += purchase.amount.toNumber();
+        bucket.purchases += 1;
+      }
     }
     for (const enrollment of enrollments) {
       const bucket = byMonth.get(monthKey(enrollment.enrolledAt));

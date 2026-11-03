@@ -1,4 +1,5 @@
 import {
+  IsArray,
   IsIn,
   IsISO8601,
   IsInt,
@@ -27,6 +28,10 @@ export class CreateBootcampDto {
 
   @IsIn(FORMATS)
   format: string;
+
+  @IsOptional()
+  @IsString()
+  location?: string;
 
   @IsNumber()
   @Min(0)
@@ -57,4 +62,36 @@ export class CreateBootcampDto {
 
   @IsString()
   coverTo: string;
+
+  @IsOptional()
+  @IsString()
+  categorySlug?: string;
+
+  @IsOptional()
+  @IsString()
+  level?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  hoursPerWeek?: number;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  outcomes?: string[];
+
+  @IsOptional()
+  @IsArray()
+  modules?: { title: string; weeks: string; topics: string[] }[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  admissionRequirements?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  careerSupport?: string[];
 }

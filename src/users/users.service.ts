@@ -7,8 +7,11 @@ import {
 import { mkdir, readdir, unlink, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { PrismaService } from '../prisma/prisma.service';
+import { PageTemplatesService } from '../page-templates/page-templates.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+
+const BUILTIN_TEMPLATES = ['classic', 'editorial', 'minimal'];
 
 const AVATAR_ROOT = join(process.cwd(), 'uploads-public', 'avatars');
 const AVATAR_EXTENSION_BY_MIME: Record<string, string> = {
@@ -20,7 +23,10 @@ const MAX_AVATAR_SIZE = 2 * 1024 * 1024;
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly pageTemplatesService: PageTemplatesService,
+  ) {}
 
   async create(uid: string, email: string | undefined, dto: CreateUserDto) {
     const existing = await this.prisma.user.findUnique({ where: { uid } });
@@ -54,6 +60,13 @@ export class UsersService {
 
   async update(uid: string, dto: UpdateUserDto) {
     await this.findMeOrThrow(uid);
+
+    if (dto.profileTemplate && !BUILTIN_TEMPLATES.includes(dto.profileTemplate)) {
+      const isValid = await this.pageTemplatesService.existsActive(dto.profileTemplate);
+      if (!isValid) {
+        throw new BadRequestException('Unknown template');
+      }
+    }
 
     return this.prisma.user.update({
       where: { uid },

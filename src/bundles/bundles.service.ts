@@ -14,8 +14,25 @@ import { UpdateBundleDto } from './dto/update-bundle.dto';
 
 const FULL_INCLUDE = {
   teacher: true,
+  category: true,
   courses: {
-    include: { course: { select: { id: true, slug: true, title: true } } },
+    include: {
+      course: {
+        select: {
+          id: true,
+          slug: true,
+          title: true,
+          summary: true,
+          level: true,
+          price: true,
+          discountPercent: true,
+          marginPercent: true,
+          coverFrom: true,
+          coverTo: true,
+          coverImagePath: true,
+        },
+      },
+    },
   },
   _count: { select: { purchases: true } },
 };
@@ -37,11 +54,34 @@ export class BundlesService {
       id: bundle.id,
       slug: bundle.slug,
       teacherUid: bundle.teacherUid,
-      instructor: { uid: bundle.teacher.uid, name: bundle.teacher.name },
+      instructor: {
+        uid: bundle.teacher.uid,
+        name: bundle.teacher.name,
+        title: bundle.teacher.expertise ?? null,
+        bio: bundle.teacher.bio ?? null,
+        avatarPath: bundle.teacher.avatarPath ?? null,
+      },
       title: bundle.title,
+      tagline: bundle.tagline,
       description: bundle.description,
       courseIds: bundle.courses.map((c) => c.courseId),
-      courses: bundle.courses.map((c) => c.course),
+      courses: bundle.courses.map((c) => {
+        const courseListPrice = computeListPrice(
+          c.course.price,
+          c.course.marginPercent,
+        );
+        return {
+          id: c.course.id,
+          slug: c.course.slug,
+          title: c.course.title,
+          summary: c.course.summary,
+          level: c.course.level,
+          coverTheme: { from: c.course.coverFrom, to: c.course.coverTo },
+          coverImagePath: c.course.coverImagePath,
+          listPrice: courseListPrice,
+          finalPrice: discounted(courseListPrice, c.course.discountPercent),
+        };
+      }),
       price: bundle.price.toNumber(),
       discountPercent: bundle.discountPercent,
       marginPercent: bundle.marginPercent,
@@ -53,7 +93,15 @@ export class BundlesService {
       coverImagePath: bundle.coverImagePath,
       views: bundle.views,
       purchases: bundle._count.purchases,
+      students: bundle._count.purchases,
       createdAt: bundle.createdAt,
+      categorySlug: bundle.categorySlug,
+      categoryName: bundle.category?.name ?? null,
+      level: bundle.level,
+      rating: bundle.rating,
+      badge: bundle.badge,
+      highlights: bundle.highlights,
+      audience: bundle.audience,
     };
   }
 
@@ -95,11 +143,17 @@ export class BundlesService {
         teacherUid,
         slug: await this.uniqueSlug(dto.title),
         title: dto.title,
+        tagline: dto.tagline ?? '',
         description: dto.description,
         price: dto.price,
         discountPercent: dto.discountPercent ?? 0,
         coverFrom: dto.coverFrom,
         coverTo: dto.coverTo,
+        categorySlug: dto.categorySlug,
+        level: dto.level,
+        badge: dto.badge,
+        highlights: dto.highlights ?? [],
+        audience: dto.audience ?? '',
         courses: {
           createMany: { data: dto.courseIds.map((courseId) => ({ courseId })) },
         },
@@ -226,15 +280,57 @@ export class BundlesService {
     return this.map({ ...bundle, views: bundle.views + 1 });
   }
 
+  async findMine(userUid: string) {
+    const purchases = await this.prisma.bundlePurchase.findMany({
+      where: { userUid },
+      include: { bundle: { include: FULL_INCLUDE } },
+      orderBy: { purchasedAt: 'desc' },
+    });
+    return purchases.map((p) => ({
+      ...this.map(p.bundle),
+      purchasedAt: p.purchasedAt,
+    }));
+  }
+
   // -- Admin moderation --
 
+  /** Lightweight row projection for the admin content-review list — skips the nested
+   * included-courses list, which the list row never renders. */
   async findAllForAdmin(status?: string) {
     const bundles = await this.prisma.bundle.findMany({
       where: status ? { status: status as never } : undefined,
-      include: FULL_INCLUDE,
+      select: {
+        id: true,
+        title: true,
+        price: true,
+        discountPercent: true,
+        marginPercent: true,
+        status: true,
+        rejectionReason: true,
+        coverFrom: true,
+        coverTo: true,
+        coverImagePath: true,
+        category: { select: { name: true } },
+        teacher: { select: { uid: true, name: true } },
+      },
       orderBy: { createdAt: 'desc' },
     });
-    return bundles.map((b) => this.map(b));
+    return bundles.map((b) => {
+      const listPrice = computeListPrice(b.price, b.marginPercent);
+      return {
+        id: b.id,
+        title: b.title,
+        category: b.category?.name ?? null,
+        instructor: { uid: b.teacher.uid, name: b.teacher.name },
+        price: b.price.toNumber(),
+        marginPercent: b.marginPercent,
+        finalPrice: discounted(listPrice, b.discountPercent),
+        status: b.status,
+        rejectionReason: b.rejectionReason,
+        coverTheme: { from: b.coverFrom, to: b.coverTo },
+        coverImagePath: b.coverImagePath,
+      };
+    });
   }
 
   async approve(id: string, marginPercent: number) {
