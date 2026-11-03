@@ -2,17 +2,17 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* ─── Cream/dark base with a warm terracotta accent — matches the main platform ─── */
+/* ─── Warm parchment/cream base with deep navy ink accent — matches the main platform ─── */
 :root {
-  --background: #fffbf0;
-  --background-soft: #fff0d4;
-  --surface: #fafaf5;
-  --foreground: #0d0d0d;
-  --muted: rgba(13, 13, 13, 0.65);
-  --border: rgba(181, 75, 44, 0.15);
-  --accent: #b54b2c;
-  --accent-hover: #954023;
-  --accent-soft: rgba(181, 75, 44, 0.08);
+  --background: #f2ecdd;
+  --background-soft: #e9e1cd;
+  --surface: #faf7ef;
+  --foreground: #16223d;
+  --muted: rgba(22, 34, 61, 0.6);
+  --border: rgba(22, 34, 61, 0.12);
+  --accent: #1b2947;
+  --accent-hover: #263a63;
+  --accent-soft: rgba(27, 41, 71, 0.08);
   --on-accent: #ffffff;
   --chart-series-2: #1d4ed8;
   --font-sans: var(--font-sora);
@@ -20,15 +20,15 @@
 }
 
 .dark {
-  --background: #0a0a0a;
-  --background-soft: #111111;
-  --surface: #111111;
-  --foreground: #f5e6cc;
-  --muted: rgba(245, 230, 204, 0.6);
-  --border: rgba(245, 230, 204, 0.1);
-  --accent: #e3714a;
-  --accent-hover: #d65a35;
-  --accent-soft: rgba(227, 113, 74, 0.12);
+  --background: #0f1626;
+  --background-soft: #161f34;
+  --surface: #161f34;
+  --foreground: #f2ecdd;
+  --muted: rgba(242, 236, 221, 0.65);
+  --border: rgba(242, 236, 221, 0.12);
+  --accent: #4a67a3;
+  --accent-hover: #5c7ab8;
+  --accent-soft: rgba(74, 103, 163, 0.18);
   --chart-series-2: #3b82f6;
 }
 
@@ -63,20 +63,20 @@ body {
 }
 
 /* Halftone dot texture: a tiled SVG dot (no CSS gradient function
-   involved), accent terracotta at low opacity. */
+   involved), accent navy at low opacity. */
 .halftone {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22'%3E%3Ccircle cx='1' cy='1' r='1' fill='%23B54B2C' fill-opacity='0.09'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22'%3E%3Ccircle cx='1' cy='1' r='1' fill='%231B2947' fill-opacity='0.09'/%3E%3C/svg%3E");
   background-size: 22px 22px;
 }
 .dark .halftone {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22'%3E%3Ccircle cx='1' cy='1' r='1' fill='%23E3714A' fill-opacity='0.08'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22'%3E%3Ccircle cx='1' cy='1' r='1' fill='%234A67A3' fill-opacity='0.08'/%3E%3C/svg%3E");
 }
 
 .manga-border {
-  border: 2px solid var(--foreground);
-  box-shadow: 3px 3px 0 var(--foreground);
+  border: none;
+  box-shadow: 0 10px 24px -8px rgba(22, 34, 61, 0.4);
 }
 .dark .manga-border {
-  border: 2px solid rgba(245, 230, 204, 0.4);
-  box-shadow: 3px 3px 0 var(--accent);
+  border: none;
+  box-shadow: 0 10px 24px -8px rgba(0, 0, 0, 0.55);
 }

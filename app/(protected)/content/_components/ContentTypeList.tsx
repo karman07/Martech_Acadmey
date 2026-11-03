@@ -62,6 +62,35 @@ export type ContentItem = {
   contentCounts?: ContentCounts;
 };
 
+function SkeletonRow() {
+  return (
+    <div className="animate-pulse rounded-2xl border border-border bg-surface p-5">
+      <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
+        <div className="flex items-center gap-4 sm:w-96 sm:shrink-0">
+          <div className="h-14 w-14 shrink-0 rounded-xl bg-background-soft" />
+          <div className="min-w-0 flex-1 space-y-2.5">
+            <div className="h-4 w-3/4 rounded-full bg-background-soft" />
+            <div className="h-3 w-1/2 rounded-full bg-background-soft" />
+            <div className="h-4 w-16 rounded-full bg-background-soft" />
+          </div>
+        </div>
+        <div className="flex flex-1 items-center gap-6 border-t border-border pt-4 sm:border-t-0 sm:pt-0">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="space-y-2">
+              <div className="h-5 w-14 rounded-full bg-background-soft" />
+              <div className="h-3 w-16 rounded-full bg-background-soft" />
+            </div>
+          ))}
+        </div>
+        <div className="flex shrink-0 justify-end gap-2 border-t border-border pt-4 sm:border-t-0 sm:pt-0">
+          <div className="h-9 w-24 rounded-full bg-background-soft" />
+          <div className="h-9 w-20 rounded-full bg-background-soft" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const STATUS_TABS = ["pending_review", "draft", "published", "rejected"] as const;
 export const TYPE_LABEL: Record<ContentType, string> = {
   courses: "Course",
@@ -76,15 +105,15 @@ export default function ContentTypeList({ contentType }: { contentType: ContentT
   const [items, setItems] = useState<ContentItem[]>([]);
   const [status, setStatus] = useState<(typeof STATUS_TABS)[number]>("pending_review");
   const [loading, setLoading] = useState(true);
-  const [actionTarget, setActionTarget] = useState<{ item: ContentItem; action: "approve" | "reject" | "margin" } | null>(
+  const [actionTarget, setActionTarget] = useState<{ item: ContentItem; action: "approve" | "reject" | "margin" | "unpublish" } | null>(
     null,
   );
 
   const load = useCallback(() => {
     setLoading(true);
-    apiFetch(`/admin/content?status=${status}`)
+    apiFetch(`/admin/content?status=${status}&contentType=${contentType}`)
       .then((res) => res.json())
-      .then((all: ContentItem[]) => setItems(all.filter((i) => i.contentType === contentType)))
+      .then((items: ContentItem[]) => setItems(items))
       .finally(() => setLoading(false));
   }, [apiFetch, status, contentType]);
 
@@ -109,6 +138,14 @@ export default function ContentTypeList({ contentType }: { contentType: ContentT
       </div>
 
       <div className="mt-6 flex flex-col gap-3">
+        {loading && (
+          <>
+            <SkeletonRow />
+            <SkeletonRow />
+            <SkeletonRow />
+          </>
+        )}
+
         {!loading && items.length === 0 && (
           <div className="rounded-2xl border border-dashed border-border p-14 text-center">
             <p className="font-sans text-lg font-bold">Nothing here</p>
@@ -118,7 +155,7 @@ export default function ContentTypeList({ contentType }: { contentType: ContentT
           </div>
         )}
 
-        {items.map((item) => (
+        {!loading && items.map((item) => (
           <div
             key={item.id}
             className="rounded-2xl border border-border bg-surface transition-colors hover:border-accent/30"
@@ -194,9 +231,16 @@ export default function ContentTypeList({ contentType }: { contentType: ContentT
                 </>
               )}
               {item.status === "published" && (
-                <Button size="sm" variant="secondary" onClick={() => setActionTarget({ item, action: "margin" })}>
-                  Adjust margin
-                </Button>
+                <>
+                  <Button size="sm" variant="secondary" onClick={() => setActionTarget({ item, action: "margin" })}>
+                    Adjust margin
+                  </Button>
+                  {item.contentType === "courses" && (
+                    <Button size="sm" variant="secondary" onClick={() => setActionTarget({ item, action: "unpublish" })}>
+                      Unpublish
+                    </Button>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -223,16 +267,20 @@ export function ActionModal({
   onClose,
   onDone,
 }: {
-  target: { item: ContentItem; action: "approve" | "reject" | "margin" };
+  target: { item: ContentItem; action: "approve" | "reject" | "margin" | "unpublish" };
   onClose: () => void;
   onDone: () => void;
 }) {
   const { apiFetch } = useAuth();
   const { item, action } = target;
-  const [marginPercent, setMarginPercent] = useState(item.marginPercent || 0);
+  const [marginInput, setMarginInput] = useState(String(item.marginPercent || 0));
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Backend requires a whole-number percent (@IsInt) — round here so a value like "10.08"
+  // never gets silently rejected by the API with an unhelpful "something went wrong".
+  const marginPercent = Math.min(500, Math.max(0, Math.round(Number(marginInput) || 0)));
 
   async function submit() {
     setSubmitting(true);
@@ -242,12 +290,18 @@ export function ActionModal({
       const res = await apiFetch(path, {
         method: action === "margin" ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(action === "reject" ? { reason } : { marginPercent }),
+        body: JSON.stringify(
+          action === "reject" ? { reason } : action === "unpublish" ? {} : { marginPercent },
+        ),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        const message = Array.isArray(body?.message) ? body.message.join(" ") : body?.message;
+        throw new Error(message || "Something went wrong. Please try again.");
+      }
       onDone();
-    } catch {
-      setError("Something went wrong. Please try again.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -275,8 +329,10 @@ export function ActionModal({
             type="number"
             min={0}
             max={500}
-            value={marginPercent}
-            onChange={(e) => setMarginPercent(Number(e.target.value))}
+            step={1}
+            inputMode="numeric"
+            value={marginInput}
+            onChange={(e) => setMarginInput(e.target.value)}
             className="mt-1.5 w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm outline-none focus:border-accent"
           />
           <p className="mt-1.5 text-xs text-muted">
@@ -298,6 +354,13 @@ export function ActionModal({
             className="mt-1.5 w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm outline-none focus:border-accent"
           />
         </div>
+      )}
+
+      {action === "unpublish" && (
+        <p className="mt-5 text-sm text-muted">
+          This pulls the course down — it disappears from the public catalog and stops new enrollments. Students
+          already enrolled keep full access to their lessons. The teacher can resubmit it for review any time.
+        </p>
       )}
 
       <Button

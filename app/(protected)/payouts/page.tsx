@@ -12,15 +12,16 @@ type Payout = {
   teacherUid: string;
   periodLabel: string;
   amount: number | string;
-  status: "pending" | "processing" | "paid";
+  status: "pending" | "processing" | "paid" | "failed";
   method: string;
+  note?: string | null;
   dateISO: string;
   teacher: { name: string; email: string | null };
 };
 
 type Teacher = { uid: string; name: string; email: string | null };
 
-const STATUS_OPTIONS = ["pending", "processing", "paid"] as const;
+const STATUS_OPTIONS = ["pending", "processing", "paid", "failed"] as const;
 
 export default function PayoutsPage() {
   const { apiFetch } = useAuth();
@@ -89,7 +90,10 @@ export default function PayoutsPage() {
             {payouts.map((payout) => (
               <tr key={payout.id}>
                 <td className="px-5 py-4 font-medium">{payout.teacher.name}</td>
-                <td className="px-5 py-4 text-muted">{payout.periodLabel}</td>
+                <td className="px-5 py-4 text-muted">
+                  {payout.periodLabel}
+                  {payout.note && <p className="mt-0.5 max-w-xs text-[11px] text-muted">{payout.note}</p>}
+                </td>
                 <td className="px-5 py-4 font-semibold">{formatCurrency(Number(payout.amount))}</td>
                 <td className="px-5 py-4 text-muted">{payout.method}</td>
                 <td className="px-5 py-4 text-muted">{formatDate(payout.dateISO)}</td>

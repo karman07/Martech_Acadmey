@@ -7,6 +7,7 @@ const STATUS_CLASSES: Record<string, string> = {
   approved: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25",
   paid: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25",
   rejected: "bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/25",
+  failed: "bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/25",
   info_requested: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/25",
   unsubmitted: "bg-background-soft text-muted border border-border",
 };

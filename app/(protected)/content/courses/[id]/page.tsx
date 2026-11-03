@@ -27,12 +27,23 @@ type CourseDetail = {
   coverTheme: { from: string; to: string };
   coverImagePath: string | null;
   courseTemplate: "classic" | "editorial" | "minimal";
+  playerTemplate: "classic" | "editorial" | "minimal";
+  hideLessonNavbar: boolean;
   courseAccent: string;
   rating: number;
   reviewCount: number;
   studentsEnrolled: number;
   views: number;
   modules: CourseModule[];
+  assignments: { id: string; title: string; description: string; tags: string[]; dueInDays: number }[];
+  activities: { id: string; title: string; description: string; tags: string[] }[];
+  quizzes: {
+    id: string;
+    title: string;
+    description: string;
+    tags: string[];
+    questions: { id: string; prompt: string; options: string[]; correctOptionIndex: number }[];
+  }[];
   contentCounts: ContentCounts;
   createdAt: string;
 };
@@ -57,7 +68,7 @@ export default function CourseDetailPage() {
   const { apiFetch } = useAuth();
   const [course, setCourse] = useState<CourseDetail | null>(null);
   const [loading, setLoading] = useState(true);
-  const [actionTarget, setActionTarget] = useState<"approve" | "reject" | "margin" | null>(null);
+  const [actionTarget, setActionTarget] = useState<"approve" | "reject" | "margin" | "unpublish" | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -90,15 +101,33 @@ export default function CourseDetailPage() {
 
   return (
     <div>
-      <button
-        onClick={() => router.push("/content/courses")}
-        className="flex items-center gap-1.5 text-sm font-semibold text-muted hover:text-foreground"
-      >
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
-          <path d="M15 18l-6-6 6-6" />
-        </svg>
-        Back to courses
-      </button>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <button
+          onClick={() => router.push("/content/courses")}
+          className="flex items-center gap-1.5 text-sm font-semibold text-muted hover:text-foreground"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
+          Back to courses
+        </button>
+        <a
+          href={`${process.env.NEXT_PUBLIC_FRONTEND_URL}/course-preview/${course.id}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1.5 rounded-full border border-border px-4 py-2 text-xs font-semibold transition-colors hover:border-accent/40 hover:text-accent"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
+            <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z" />
+            <circle cx="12" cy="12" r="3" />
+          </svg>
+          View full course page
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+            <path d="M15 3h6v6M10 14 21 3" />
+          </svg>
+        </a>
+      </div>
 
       {/* Hero */}
       <div
@@ -125,6 +154,7 @@ export default function CourseDetailPage() {
             </p>
             <p className="mt-1 text-xs text-white/70">
               Page layout: <span className="font-semibold capitalize">{course.courseTemplate === "classic" ? "Signature" : course.courseTemplate}</span>
+              {" · "}Lesson player: <span className="font-semibold capitalize">{course.playerTemplate === "classic" ? "Signature" : course.playerTemplate}</span>
               {" · "}Accent: <span className="font-semibold capitalize">{course.courseAccent}</span>
             </p>
           </div>
@@ -183,9 +213,14 @@ export default function CourseDetailPage() {
             </>
           )}
           {course.status === "published" && (
-            <Button size="sm" variant="secondary" onClick={() => setActionTarget("margin")}>
-              Adjust margin
-            </Button>
+            <>
+              <Button size="sm" variant="secondary" onClick={() => setActionTarget("margin")}>
+                Adjust margin
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => setActionTarget("unpublish")}>
+                Unpublish
+              </Button>
+            </>
           )}
         </div>
       </div>
@@ -208,6 +243,102 @@ export default function CourseDetailPage() {
           <span className="font-bold text-foreground">{course.contentCounts.liveClasses}</span> live classes
         </span>
       </div>
+
+      {/* Assignments */}
+      {course.assignments.length > 0 && (
+        <div className="mt-6 rounded-2xl border border-border bg-surface p-6">
+          <h2 className="font-sans text-lg font-bold">Assignments</h2>
+          <div className="mt-4 space-y-3">
+            {course.assignments.map((a) => (
+              <div key={a.id} className="rounded-xl border border-border bg-background-soft/50 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-bold">{a.title}</p>
+                  <span className="shrink-0 rounded-full bg-accent-soft px-2 py-0.5 text-[10px] font-bold text-accent">
+                    Due in {a.dueInDays} {a.dueInDays === 1 ? "day" : "days"}
+                  </span>
+                </div>
+                <p className="mt-1.5 whitespace-pre-wrap text-sm text-muted">{a.description}</p>
+                {a.tags.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {a.tags.map((t) => (
+                      <span key={t} className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted">
+                        {t}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Activities */}
+      {course.activities.length > 0 && (
+        <div className="mt-6 rounded-2xl border border-border bg-surface p-6">
+          <h2 className="font-sans text-lg font-bold">Activities</h2>
+          <div className="mt-4 space-y-3">
+            {course.activities.map((a) => (
+              <div key={a.id} className="rounded-xl border border-border bg-background-soft/50 p-4">
+                <p className="text-sm font-bold">{a.title}</p>
+                <p className="mt-1.5 whitespace-pre-wrap text-sm text-muted">{a.description}</p>
+                {a.tags.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {a.tags.map((t) => (
+                      <span key={t} className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted">
+                        {t}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Quizzes */}
+      {course.quizzes.length > 0 && (
+        <div className="mt-6 rounded-2xl border border-border bg-surface p-6">
+          <h2 className="font-sans text-lg font-bold">Quizzes</h2>
+          <div className="mt-4 space-y-5">
+            {course.quizzes.map((q) => (
+              <div key={q.id} className="rounded-xl border border-border bg-background-soft/50 p-4">
+                <p className="text-sm font-bold">{q.title}</p>
+                <p className="mt-1.5 text-sm text-muted">{q.description}</p>
+                <div className="mt-3 space-y-2.5">
+                  {q.questions.map((question, qi) => (
+                    <div key={question.id} className="rounded-lg border border-border bg-surface p-3">
+                      <p className="text-xs font-semibold">
+                        {qi + 1}. {question.prompt}
+                      </p>
+                      <ul className="mt-2 space-y-1">
+                        {question.options.map((option, oi) => (
+                          <li
+                            key={oi}
+                            className={`flex items-center gap-1.5 text-xs ${
+                              oi === question.correctOptionIndex ? "font-semibold text-accent" : "text-muted"
+                            }`}
+                          >
+                            {oi === question.correctOptionIndex ? (
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3 shrink-0">
+                                <path d="M20 6 9 17l-5-5" />
+                              </svg>
+                            ) : (
+                              <span className="h-3 w-3 shrink-0" />
+                            )}
+                            {option}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Description */}
       <div className="mt-6 rounded-2xl border border-border bg-surface p-6">
